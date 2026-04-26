@@ -1,0 +1,11 @@
+{
+  "url_pattern": "https://seo-marketing.co.kr/{number}",
+  "dynamic": false,
+  "selectors": {
+    "voc_number": ".num",
+    "title": ".title",
+    "content": ".content",
+    "requester": ".req",
+    "due_date": ".due"
+  }
+}
