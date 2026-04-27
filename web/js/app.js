@@ -1,4 +1,7 @@
-const { createApp, ref, reactive, computed, onMounted } = Vue;
+const { createApp, ref, reactive, computed, onMounted, watch, nextTick } = Vue;
+
+// Single rich-text editor instance (one visible at a time)
+let _editor = null;
 
 createApp({
   setup() {
@@ -6,50 +9,129 @@ createApp({
     // ═══════════════════════════════════════════════
     // 공통
     // ═══════════════════════════════════════════════
-    // Menu: active | allvoc | stats | knowledge | board | settings
     const activeMenu   = ref('active');
     const assignees    = ref([]);
     const workload     = ref([]);
     const nextUp       = ref(null);
     const imageSupport = ref(false);
-    const categoryList = ref([]);
 
-    const loadAssignees  = async () => { assignees.value  = await eel.get_assignees()(); };
-    const loadWorkload   = async () => { workload.value   = await eel.get_workload()(); };
-    const loadNextUp     = async () => { nextUp.value     = await eel.get_next_up()(); };
-    const loadCategoryList = async () => { categoryList.value = await eel.get_category_list()(); };
+    // ── 유형 시스템 ──
+    const typeGroups = ref([]);
+    const typeItems  = ref({}); // { group_code: [...items] }
 
-    const priorityLabel   = { low:'낮음', normal:'보통', high:'높음', urgent:'긴급' };
-    const statusLabel     = { open:'접수', in_progress:'처리중', resolved:'해결', closed:'종료' };
-    const statusList      = ['open','in_progress','resolved','closed'];
-    const assignTypeLabel = { auto:'자동', forced:'지정', dedicated:'전담', skipped:'보류', manual:'수동' };
-    const assignTypeColor = {
-      auto:'bg-slate-100 text-slate-600', forced:'bg-orange-100 text-orange-700',
-      dedicated:'bg-blue-100 text-blue-700', skipped:'bg-red-100 text-red-600',
-      manual:'bg-slate-100 text-slate-600',
+    const categoryList    = computed(() => typeItems.value['category']     || []);
+    const processTypeList = computed(() => typeItems.value['process_type'] || []);
+    const statusItemsList = computed(() => typeItems.value['voc_status']   || []);
+
+    const statusLabel = computed(() => {
+      const m = { open: '접수', in_progress: '처리중', resolved: '해결', closed: '종료' };
+      for (const s of statusItemsList.value) { if (s.value) m[s.value] = s.name; }
+      return m;
+    });
+    const statusList = computed(() =>
+      statusItemsList.value.length
+        ? statusItemsList.value.map(s => s.value).filter(Boolean)
+        : ['open', 'in_progress', 'resolved', 'closed']
+    );
+
+    const loadAssignees = async () => { assignees.value = await eel.get_assignees()(); };
+    const loadWorkload  = async () => { workload.value  = await eel.get_workload()(); };
+    const loadNextUp    = async () => { nextUp.value    = await eel.get_next_up()(); };
+
+    // ── UI 줌 ──
+    const uiZoom = ref(parseFloat(localStorage.getItem('ui_zoom') || '0.9'));
+    const applyZoom = (z) => { document.getElementById('app').style.zoom = z; };
+    const setZoom = (delta) => {
+      const next = Math.round((uiZoom.value + delta) * 100) / 100;
+      uiZoom.value = Math.min(1.3, Math.max(0.65, next));
+      applyZoom(uiZoom.value);
+      localStorage.setItem('ui_zoom', uiZoom.value);
     };
 
-    const todayStr = () => new Date().toISOString().slice(0, 10);
+    const loadTypeSystem = async () => {
+      const groups = await eel.get_type_groups()();
+      typeGroups.value = groups;
+      const pairs = await Promise.all(groups.map(g => eel.get_type_items(g.code)().then(items => [g.code, items])));
+      const map = {};
+      for (const [code, items] of pairs) map[code] = items;
+      typeItems.value = map;
+    };
+
+    // ── 에디터 관리 ──
+    const _destroyEditor = () => {
+      if (_editor) { try { _editor.destroy(); } catch (e) {} _editor = null; }
+    };
+
+    const _initEditor = (containerId, content = '') => {
+      _destroyEditor();
+      const el = document.getElementById(containerId);
+      if (!el || !window.toastui) return;
+      _editor = new window.toastui.Editor({
+        el,
+        height: '380px',
+        initialEditType: 'wysiwyg',
+        usageStatistics: false,
+        toolbarItems: [
+          ['heading', 'bold', 'italic', 'strike'],
+          ['hr', 'quote'],
+          ['ul', 'ol', 'task'],
+          ['link'],
+          ['code', 'codeblock'],
+        ],
+      });
+      if (content) {
+        const isHtml = /<[a-z][\s\S]*>/i.test(content);
+        _editor.setHTML(isHtml ? content : content.replace(/\n/g, '<br>'));
+      }
+    };
+
+    const _getEditorContent = () => _editor ? _editor.getHTML() : '';
+
+    // 내용 표시 헬퍼 (plain text ↔ HTML 자동 감지)
+    const renderContent = (text) => {
+      if (!text) return '';
+      if (/<[a-z][\s\S]*>/i.test(text)) return text;
+      return text
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>');
+    };
+
+    const priorityLabel   = { low: '낮음', normal: '보통', high: '높음', urgent: '긴급' };
+    const assignTypeLabel = { auto: '자동', forced: '지정', dedicated: '전담', skipped: '보류', manual: '수동' };
+    const assignTypeColor = {
+      auto:      'bg-slate-100 text-slate-600',
+      forced:    'bg-orange-100 text-orange-700',
+      dedicated: 'bg-blue-100 text-blue-700',
+      skipped:   'bg-red-100 text-red-600',
+      manual:    'bg-slate-100 text-slate-600',
+    };
+
+    const todayStr    = () => new Date().toISOString().slice(0, 10);
+    const oneMonthAgo = () => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - 1);
+      return d.toISOString().slice(0, 10);
+    };
 
     const getDday = (d) => {
       if (!d) return null;
-      const today = new Date(); today.setHours(0,0,0,0);
-      const due   = new Date(d); due.setHours(0,0,0,0);
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const due   = new Date(d); due.setHours(0, 0, 0, 0);
       return Math.ceil((due - today) / 86400000);
     };
     const ddayLabel = (d) => {
       const n = getDday(d);
       if (n === null) return '';
-      if (n < 0)  return `D+${Math.abs(n)}`;
+      if (n < 0)   return `D+${Math.abs(n)}`;
       if (n === 0) return 'D-Day';
       return `D-${n}`;
     };
     const ddayCls = (d) => {
       const n = getDday(d);
       if (n === null) return 'dday-normal';
-      if (n < 0)  return 'dday-past';
+      if (n < 0)   return 'dday-past';
       if (n === 0) return 'dday-today';
-      if (n <= 3) return 'dday-soon';
+      if (n <= 3)  return 'dday-soon';
       return 'dday-normal';
     };
 
@@ -57,7 +139,7 @@ createApp({
     // VOC 상세 (active + allvoc 공용)
     // ═══════════════════════════════════════════════
     const selectedVoc       = ref(null);
-    const rightTab          = ref('detail'); // detail | refTab | memo | similar
+    const rightTab          = ref('detail');
     const vocHistory        = ref([]);
     const vocNotes          = ref([]);
     const vocImages         = ref([]);
@@ -69,9 +151,7 @@ createApp({
     const showForcedPanel   = ref(false);
     const textSimilar       = ref([]);
 
-    const similarVocs = computed(() => {
-      return textSimilar.value.filter(v => v.id !== selectedVoc.value?.id);
-    });
+    const similarVocs = computed(() => textSimilar.value.filter(v => v.id !== selectedVoc.value?.id));
 
     const memoDate    = ref(todayStr());
     const memoMinutes = ref('');
@@ -135,10 +215,10 @@ createApp({
         eel.get_voc_images(v.id)(),
         eel.get_voc_knowledge(v.id)(),
       ]);
-      vocHistory.value = history;
-      vocNotes.value   = notes;
-      vocImages.value  = images;
-      vocLinks.value   = links;
+      vocHistory.value  = history;
+      vocNotes.value    = notes;
+      vocImages.value   = images;
+      vocLinks.value    = links;
       textSimilar.value = await eel.get_similar_vocs(v.title, v.content, 5)();
     };
 
@@ -176,7 +256,7 @@ createApp({
       }
       if (result && result.success) {
         const ai = result.assign_info;
-        const a = assignees.value.find(x => x.id === ai.assignee_id);
+        const a  = assignees.value.find(x => x.id === ai.assignee_id);
         if (a) { selectedVoc.value.assignee_name = a.name; selectedVoc.value.assignee_id = a.id; }
         vocHistory.value = await eel.get_assignment_history(selectedVoc.value.id)();
         showForcedPanel.value = false;
@@ -220,8 +300,7 @@ createApp({
     const reportCopied     = ref(false);
 
     const loadActiveVocs = async () => {
-      const result = await eel.get_vocs('active', null, activeAssigneeId.value)();
-      activeVocList.value = result;
+      activeVocList.value = await eel.get_vocs('active', null, activeAssigneeId.value)();
     };
 
     const fetchVoc = async () => {
@@ -284,13 +363,13 @@ createApp({
     // ═══════════════════════════════════════════════
     // 2. 전체 VOC (allvoc)
     // ═══════════════════════════════════════════════
-    const allVocList      = ref([]);
-    const allVocSearch    = ref('');
-    const allVocDateFrom  = ref('');
-    const allVocDateTo    = ref('');
-    const allVocStatus    = ref('all');
-    const allVocAssignee  = ref('all');
-    const allVocCategory  = ref('all');
+    const allVocList     = ref([]);
+    const allVocSearch   = ref('');
+    const allVocDateFrom = ref(oneMonthAgo());
+    const allVocDateTo   = ref(todayStr());
+    const allVocStatus   = ref('all');
+    const allVocAssignee = ref('all');
+    const allVocCategory = ref('all');
 
     const loadAllVoc = async () => {
       allVocList.value = await eel.get_vocs(
@@ -299,7 +378,7 @@ createApp({
         allVocAssignee.value,
         allVocCategory.value,
         allVocDateFrom.value || null,
-        allVocDateTo.value || null
+        allVocDateTo.value   || null
       )();
     };
 
@@ -335,15 +414,14 @@ createApp({
     const periodToDateRange = (period, mode) => {
       if (mode === 'monthly') {
         const [y, m] = period.split('-');
-        const from = `${y}-${m}-01`;
+        const from    = `${y}-${m}-01`;
         const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
-        const to = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+        const to      = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
         return { from, to };
       }
-      // weekly: period = 'YYYY-WWW'
       const [y, w] = period.split('-W');
-      const jan4 = new Date(parseInt(y), 0, 4);
-      const dow = jan4.getDay() || 7;
+      const jan4   = new Date(parseInt(y), 0, 4);
+      const dow    = jan4.getDay() || 7;
       const weekStart = new Date(jan4.getTime() - (dow - 1) * 86400000 + (parseInt(w) - 1) * 7 * 86400000);
       const weekEnd   = new Date(weekStart.getTime() + 6 * 86400000);
       const fmt = d => d.toISOString().slice(0, 10);
@@ -374,16 +452,16 @@ createApp({
     // ═══════════════════════════════════════════════
     // 4. 레퍼런스 (knowledge)
     // ═══════════════════════════════════════════════
-    const knowledgeList      = ref([]);
-    const knowledgeSearch    = ref('');
-    const knowledgeCat       = ref('all');
+    const knowledgeList       = ref([]);
+    const knowledgeSearch     = ref('');
+    const knowledgeCat        = ref('all');
     const knowledgeProcessType = ref('all');
-    const selectedKnowledge  = ref(null);
-    const kEdit              = ref(false);
-    const kRightTab          = ref('content'); // content | vocs
-    const kForm              = reactive({ title: '', content: '', category: '', tags: '', process_type: '' });
-    const kSaving            = ref(false);
-    const kVocs              = ref([]);
+    const selectedKnowledge   = ref(null);
+    const kEdit               = ref(false);
+    const kRightTab           = ref('content');
+    const kForm               = reactive({ title: '', content: '', category: '', tags: '', process_type: '' });
+    const kSaving             = ref(false);
+    const kVocs               = ref([]);
 
     const loadKnowledge = async () => {
       knowledgeList.value = await eel.get_knowledge(knowledgeSearch.value || null, knowledgeCat.value, knowledgeProcessType.value)();
@@ -399,10 +477,11 @@ createApp({
       kVocs.value    = await eel.get_knowledge_vocs(item.id)();
     };
 
-    const newKnowledge  = () => { selectedKnowledge.value = null; Object.assign(kForm, { title:'', content:'', category:'', tags:'', process_type:'' }); kEdit.value = true; };
+    const newKnowledge  = () => { selectedKnowledge.value = null; Object.assign(kForm, { title: '', content: '', category: '', tags: '', process_type: '' }); kEdit.value = true; };
     const editKnowledge = () => { Object.assign(kForm, selectedKnowledge.value); kEdit.value = true; };
 
     const saveKnowledge = async () => {
+      if (_editor) kForm.content = _getEditorContent();
       kSaving.value = true;
       let result;
       if (selectedKnowledge.value?.id) {
@@ -474,10 +553,11 @@ createApp({
     const onBSearch = () => { clearTimeout(bSearchTimer); bSearchTimer = setTimeout(loadBoard, 350); };
 
     const openPost  = async (item) => { selectedPost.value = await eel.get_board_post(item.id)(); postEdit.value = false; };
-    const newPost   = () => { selectedPost.value = null; Object.assign(postForm, { title:'', content:'', category:'' }); postEdit.value = true; };
+    const newPost   = () => { selectedPost.value = null; Object.assign(postForm, { title: '', content: '', category: '' }); postEdit.value = true; };
     const editPost  = () => { Object.assign(postForm, selectedPost.value); postEdit.value = true; };
 
     const savePost = async () => {
+      if (_editor) postForm.content = _getEditorContent();
       postSaving.value = true;
       let result;
       if (selectedPost.value?.id) {
@@ -520,21 +600,44 @@ createApp({
     };
 
     const formatSize = (s) => {
-      if (s < 1024) return s + 'B';
-      if (s < 1048576) return (s/1024).toFixed(0) + 'KB';
-      return (s/1048576).toFixed(1) + 'MB';
+      if (s < 1024)    return s + 'B';
+      if (s < 1048576) return (s / 1024).toFixed(0) + 'KB';
+      return (s / 1048576).toFixed(1) + 'MB';
     };
 
     // ═══════════════════════════════════════════════
     // 6. 설정 (settings)
     // ═══════════════════════════════════════════════
-    const settingsTab = ref('members'); // scraping | members | rules | vacation | categories
+    const settingsTab = ref('members');
 
     // 휴가 관리
     const vacations        = ref([]);
     const newVacAssigneeId = ref('');
     const newVacDate       = ref(todayStr());
     const newVacType       = ref('연차');
+
+    const _nowYM = () => {
+      const n = new Date();
+      return { y: String(n.getFullYear()), m: String(n.getMonth() + 1).padStart(2, '0') };
+    };
+    const { y: _initY, m: _initM } = _nowYM();
+    const vacHistoryYear  = ref(_initY);
+    const vacHistoryMonth = ref(_initM);
+
+    const vacHistoryYears = computed(() => {
+      const s = new Set(
+        vacations.value.filter(v => v.is_past && v.vacation_date)
+          .map(v => v.vacation_date.substring(0, 4))
+      );
+      return [...s].sort((a, b) => b.localeCompare(a));
+    });
+
+    const vacHistoryFiltered = computed(() =>
+      vacations.value.filter(v =>
+        v.is_past && v.vacation_date &&
+        v.vacation_date.startsWith(vacHistoryYear.value + '-' + vacHistoryMonth.value)
+      )
+    );
 
     const loadVacations = async () => { vacations.value = await eel.get_vacations()(); };
     const addVacation = async () => {
@@ -551,38 +654,94 @@ createApp({
     };
 
     // 유형 관리
-    const newCategoryName = ref('');
-    const categoryError   = ref('');
+    const PROTECTED_GROUPS  = ['category', 'process_type', 'voc_status'];
+    const selectedGroupCode = ref('');
+    const newGroupCode      = ref('');
+    const newGroupLabel     = ref('');
+    const groupError        = ref('');
+    const newItemName       = ref('');
+    const newItemValue      = ref('');
+    const itemError         = ref('');
 
-    const addCategory = async () => {
-      categoryError.value = '';
-      const result = await eel.add_category(newCategoryName.value)();
-      if (result.success) { newCategoryName.value = ''; await loadCategoryList(); }
-      else categoryError.value = result.error;
+    const currentGroup      = computed(() => typeGroups.value.find(g => g.code === selectedGroupCode.value));
+    const currentGroupItems = computed(() => typeItems.value[selectedGroupCode.value] || []);
+
+    const selectGroup = (code) => {
+      selectedGroupCode.value = code;
+      newItemName.value = '';
+      newItemValue.value = '';
+      itemError.value = '';
     };
 
-    const deleteCategoryItem = async (id) => {
-      if (!confirm('유형을 삭제하시겠습니까?')) return;
-      await eel.delete_category(id)();
-      await loadCategoryList();
+    const addTypeGroup = async () => {
+      groupError.value = '';
+      const result = await eel.add_type_group(newGroupCode.value, newGroupLabel.value)();
+      if (result.success) {
+        newGroupCode.value = ''; newGroupLabel.value = '';
+        await loadTypeSystem();
+      } else { groupError.value = result.error; }
     };
 
-    const moveCategoryItem = async (idx, dir) => {
-      const list = categoryList.value;
+    const deleteTypeGroup = async (id, code) => {
+      if (PROTECTED_GROUPS.includes(code)) { alert('기본 그룹은 삭제할 수 없습니다.'); return; }
+      if (!confirm('그룹과 모든 항목을 삭제하시겠습니까?')) return;
+      const result = await eel.delete_type_group(id)();
+      if (result.success) {
+        if (selectedGroupCode.value === code) selectedGroupCode.value = '';
+        await loadTypeSystem();
+      } else { alert(result.error); }
+    };
+
+    const moveTypeGroup = async (idx, dir) => {
+      const list   = typeGroups.value;
       const newIdx = idx + dir;
       if (newIdx < 0 || newIdx >= list.length) return;
-      const orderList = list.map((c, i) => ({ id: c.id, sort_order: i }));
+      const orderList = list.map((g, i) => ({ id: g.id, sort_order: i }));
       const tmp = orderList[idx].sort_order;
-      orderList[idx].sort_order = orderList[newIdx].sort_order;
+      orderList[idx].sort_order   = orderList[newIdx].sort_order;
       orderList[newIdx].sort_order = tmp;
-      await eel.update_category_order(orderList)();
-      await loadCategoryList();
+      await eel.update_type_group_order(orderList)();
+      await loadTypeSystem();
+    };
+
+    const addTypeItem = async () => {
+      itemError.value = '';
+      if (!selectedGroupCode.value || !newItemName.value.trim()) return;
+      const result = await eel.add_type_item(selectedGroupCode.value, newItemName.value, newItemValue.value)();
+      if (result.success) {
+        newItemName.value = ''; newItemValue.value = '';
+        await loadTypeSystem();
+      } else { itemError.value = result.error; }
+    };
+
+    const deleteTypeItem = async (id) => {
+      if (!confirm('항목을 삭제하시겠습니까?')) return;
+      await eel.delete_type_item(id)();
+      await loadTypeSystem();
+    };
+
+    const moveTypeItem = async (idx, dir) => {
+      const list   = currentGroupItems.value;
+      const newIdx = idx + dir;
+      if (newIdx < 0 || newIdx >= list.length) return;
+      const orderList = list.map((it, i) => ({ id: it.id, sort_order: i }));
+      const tmp = orderList[idx].sort_order;
+      orderList[idx].sort_order   = orderList[newIdx].sort_order;
+      orderList[newIdx].sort_order = tmp;
+      await eel.update_type_item_order(orderList)();
+      await loadTypeSystem();
     };
 
     // ─────────────────────────────────────────────
     const config = reactive({
+      fetch_method: 'static',
       url_pattern: '', dynamic: false,
-      selectors: { voc_number:'', title:'', content:'', requester:'', due_date:'', status:'', images:'' }
+      xpath_wait_seconds: 3,
+      xpath_selectors: { voc_number: '', title: '', content: '', requester: '', due_date: '', status: '', images: '' },
+      api_url_pattern: '',
+      api_cookies: [],
+      api_field_map: { voc_number: '', title: '', content: '', requester: '', due_date: '', status: '' },
+      selectors: { voc_number: '', title: '', content: '', requester: '', due_date: '', status: '', images: '' },
     });
     const configSaved       = ref(false);
     const testNum           = ref('');
@@ -594,23 +753,51 @@ createApp({
     const newRuleCategory   = ref('');
     const newRuleAssigneeId = ref('');
     const newRuleNote       = ref('');
+    const newCookieKey      = ref('');
+    const newCookieVal      = ref('');
+
+    const fetchMethods = [
+      { key: 'static',     label: '정적 HTTP',  desc: 'CSS 셀렉터' },
+      { key: 'api_cookie', label: '쿠키 API',   desc: 'JSON 응답' },
+      { key: 'xpath',      label: 'XPath 대기', desc: '동적 페이지' },
+    ];
 
     const loadConfig = async () => {
       const d = await eel.get_config()();
-      config.url_pattern = d.url_pattern || '';
-      config.dynamic = d.dynamic || false;
-      Object.assign(config.selectors, d.selectors || {});
+      config.fetch_method       = d.fetch_method || 'static';
+      config.url_pattern        = d.url_pattern || '';
+      config.dynamic            = d.dynamic || false;
+      config.xpath_wait_seconds = d.xpath_wait_seconds ?? 3;
+      config.api_url_pattern    = d.api_url_pattern || '';
+      config.api_cookies        = (d.api_cookies || []).map(c => ({ ...c }));
+      Object.assign(config.api_field_map,   d.api_field_map   || {});
+      Object.assign(config.selectors,       d.selectors       || {});
+      Object.assign(config.xpath_selectors, d.xpath_selectors || {});
     };
 
     const saveConfig = async () => {
-      await eel.save_config({ ...config, selectors: { ...config.selectors } })();
+      const payload = {
+        ...config,
+        selectors:       { ...config.selectors },
+        xpath_selectors: { ...config.xpath_selectors },
+        api_field_map:   { ...config.api_field_map },
+        api_cookies:     config.api_cookies.map(c => ({ ...c })),
+      };
+      await eel.save_config(payload)();
       configSaved.value = true; setTimeout(() => configSaved.value = false, 2000);
     };
+
+    const addApiCookie = () => {
+      if (!newCookieKey.value.trim()) return;
+      config.api_cookies.push({ key: newCookieKey.value.trim(), value: newCookieVal.value });
+      newCookieKey.value = ''; newCookieVal.value = '';
+    };
+    const removeApiCookie = (idx) => { config.api_cookies.splice(idx, 1); };
 
     const testFetch = async () => {
       if (!testNum.value.trim()) return;
       testLoading.value = true; testResult.value = null;
-      testResult.value = await eel.fetch_voc_data(testNum.value.trim())();
+      testResult.value  = await eel.fetch_voc_data(testNum.value.trim())();
       testLoading.value = false;
     };
 
@@ -626,12 +813,12 @@ createApp({
     };
 
     const moveMember = async (idx, dir) => {
-      const list = assignees.value;
+      const list   = assignees.value;
       const newIdx = idx + dir;
       if (newIdx < 0 || newIdx >= list.length) return;
       const orderList = list.map((a, i) => ({ id: a.id, turn_order: i }));
       const tmp = orderList[idx].turn_order;
-      orderList[idx].turn_order = orderList[newIdx].turn_order;
+      orderList[idx].turn_order   = orderList[newIdx].turn_order;
       orderList[newIdx].turn_order = tmp;
       await eel.update_turn_order(orderList)();
       await loadAssignees(); await loadNextUp();
@@ -655,36 +842,165 @@ createApp({
     };
 
     const selectorFields = [
-      { key:'voc_number', label:'VOC 번호' },
-      { key:'title',      label:'제목' },
-      { key:'content',    label:'내용' },
-      { key:'requester',  label:'요청자' },
-      { key:'due_date',   label:'완료요청일' },
-      { key:'status',     label:'처리상태', hint:'동기화용' },
-      { key:'images',     label:'이미지 범위', hint:'비워두면 content 영역 전체' },
+      { key: 'voc_number', label: 'VOC 번호' },
+      { key: 'title',      label: '제목' },
+      { key: 'content',    label: '내용' },
+      { key: 'requester',  label: '요청자' },
+      { key: 'due_date',   label: '완료요청일' },
+      { key: 'status',     label: '처리상태', hint: '동기화용' },
+      { key: 'images',     label: '이미지 범위', hint: '비워두면 content 영역 전체' },
     ];
+
+    // ── 데이터 Sync 모달 ──
+    const syncModalOpen    = ref(false);
+    const syncModalItems   = ref([]);
+    const syncModalCurrent = ref(0);
+    const syncModalRunning = ref(false);
+
+    const openSyncModal = async () => {
+      const vocs = await eel.get_vocs('in_progress')();
+      syncModalItems.value   = vocs.map(v => ({
+        id: v.id, voc_number: v.voc_number || ('#' + v.id),
+        title: v.title, status: 'pending', error: '',
+      }));
+      syncModalCurrent.value = 0;
+      syncModalRunning.value = false;
+      syncModalOpen.value    = true;
+    };
+
+    const runBatchSync = async () => {
+      if (syncModalRunning.value) return;
+      syncModalRunning.value = true;
+      syncModalCurrent.value = 0;
+      let done = 0;
+      for (let i = 0; i < syncModalItems.value.length; i++) {
+        if (syncModalItems.value[i].status !== 'pending') continue;
+        syncModalItems.value[i] = { ...syncModalItems.value[i], status: 'syncing' };
+        const result = await eel.sync_single_voc(syncModalItems.value[i].id)();
+        done++;
+        syncModalCurrent.value = done;
+        if (result.success) {
+          syncModalItems.value[i] = { ...syncModalItems.value[i], status: 'done', error: '' };
+        } else {
+          syncModalItems.value[i] = { ...syncModalItems.value[i], status: 'failed', error: result.error || '오류' };
+        }
+      }
+      syncModalRunning.value = false;
+      await loadActiveVocs();
+      if (selectedVoc.value) {
+        const fresh = activeVocList.value.find(v => v.id === selectedVoc.value.id);
+        if (fresh) selectedVoc.value = fresh;
+      }
+    };
+
+    const resetSyncModal = () => {
+      syncModalItems.value = syncModalItems.value.map(i => ({ ...i, status: 'pending', error: '' }));
+      syncModalCurrent.value = 0;
+    };
+
+    const closeSyncModal = () => {
+      if (syncModalRunning.value) return;
+      syncModalOpen.value = false;
+    };
+
+    // ── 배치 처리 모달 ──
+    const _nowDate = () => {
+      const n = new Date();
+      return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
+    };
+    const batchFromDate    = ref(_nowDate());
+    const batchModalOpen   = ref(false);
+    const batchModalItems  = ref([]);
+    const batchModalCurrent = ref(0);
+    const batchModalRunning = ref(false);
+
+    const openBatchModal = async () => {
+      if (!batchFromDate.value) return;
+      const fromStr = batchFromDate.value.replace(/-/g, '');
+      const all = await eel.get_vocs('all')();
+      const filtered = all.filter(v => {
+        const prefix = (v.voc_number || '').substring(0, 8);
+        return /^\d{8}$/.test(prefix) && prefix >= fromStr;
+      }).sort((a, b) => (a.voc_number || '').localeCompare(b.voc_number || ''));
+      if (filtered.length === 0) {
+        alert(`${batchFromDate.value} 이후 VOC 번호(8자리 날짜 prefix)가 없습니다.`);
+        return;
+      }
+      batchModalItems.value   = filtered.map(v => ({
+        id: v.id, voc_number: v.voc_number || ('#' + v.id),
+        title: v.title, status: 'pending', error: '',
+      }));
+      batchModalCurrent.value = 0;
+      batchModalRunning.value = false;
+      batchModalOpen.value    = true;
+    };
+
+    const runBatchModal = async () => {
+      if (batchModalRunning.value) return;
+      batchModalRunning.value = true;
+      batchModalCurrent.value = 0;
+      let done = 0;
+      for (let i = 0; i < batchModalItems.value.length; i++) {
+        if (batchModalItems.value[i].status !== 'pending') continue;
+        batchModalItems.value[i] = { ...batchModalItems.value[i], status: 'syncing' };
+        const result = await eel.sync_single_voc(batchModalItems.value[i].id)();
+        done++;
+        batchModalCurrent.value = done;
+        batchModalItems.value[i] = result.success
+          ? { ...batchModalItems.value[i], status: 'done', error: '' }
+          : { ...batchModalItems.value[i], status: 'failed', error: result.error || '오류' };
+      }
+      batchModalRunning.value = false;
+    };
+
+    const resetBatchModal = () => {
+      batchModalItems.value   = batchModalItems.value.map(i => ({ ...i, status: 'pending', error: '' }));
+      batchModalCurrent.value = 0;
+    };
+
+    const closeBatchModal = () => {
+      if (batchModalRunning.value) return;
+      batchModalOpen.value = false;
+    };
+
+    // ── 에디터 watch (DOM이 갱신된 후 초기화) ──
+    watch(kEdit, async (val) => {
+      if (val) { await nextTick(); _initEditor('k-editor-container', kForm.content); }
+      else      { _destroyEditor(); }
+    });
+    watch(postEdit, async (val) => {
+      if (val) { await nextTick(); _initEditor('b-editor-container', postForm.content); }
+      else      { _destroyEditor(); }
+    });
 
     // ═══════════════════════════════════════════════
     // 메뉴 전환
     // ═══════════════════════════════════════════════
     const switchMenu = async (menu) => {
-      activeMenu.value = menu;
+      _destroyEditor();
+      activeMenu.value  = menu;
       selectedVoc.value = null;
       if (menu === 'active')    { await Promise.all([loadActiveVocs(), loadWorkload(), loadNextUp(), generateReport()]); }
-      if (menu === 'allvoc')    { await loadCategoryList(); await loadAllVoc(); }
+      if (menu === 'allvoc')    { await loadTypeSystem(); await loadAllVoc(); }
       if (menu === 'stats')     { await loadWorkload(); await loadStats(); }
-      if (menu === 'knowledge') { await loadCategoryList(); await loadKnowledge(); }
+      if (menu === 'knowledge') { await loadTypeSystem(); await loadKnowledge(); }
       if (menu === 'board')     { await loadBoard(); }
-      if (menu === 'settings')  { await loadConfig(); await loadAssignmentRules(); await loadVacations(); await loadCategoryList(); if (!settingsTab.value) settingsTab.value = 'members'; }
+      if (menu === 'settings')  {
+        await Promise.all([loadConfig(), loadAssignmentRules(), loadVacations(), loadTypeSystem()]);
+        if (!settingsTab.value) settingsTab.value = 'members';
+      }
     };
 
     onMounted(async () => {
+      applyZoom(uiZoom.value);
       imageSupport.value = await eel.check_image_support()();
-      await Promise.all([loadAssignees(), loadWorkload(), loadActiveVocs(), loadNextUp(), generateReport(), loadCategoryList()]);
+      await Promise.all([loadAssignees(), loadWorkload(), loadActiveVocs(), loadNextUp(), generateReport(), loadTypeSystem()]);
     });
 
     return {
       activeMenu, switchMenu, assignees, workload, nextUp, imageSupport,
+      uiZoom, setZoom,
+      typeGroups, typeItems, categoryList, processTypeList, statusItemsList,
       priorityLabel, statusLabel, statusList, assignTypeLabel, assignTypeColor,
       todayStr, getDday, ddayLabel, ddayCls,
       // VOC 상세 공용
@@ -711,6 +1027,7 @@ createApp({
       // 레퍼런스
       knowledgeList, knowledgeSearch, knowledgeCat, knowledgeProcessType,
       selectedKnowledge, kEdit, kRightTab, kForm, kSaving, kVocs,
+      renderContent,
       loadKnowledge, onKSearch, openKnowledge, newKnowledge, editKnowledge,
       saveKnowledge, deleteKnowledge, goToKnowledge, goToVocFromKnowledge,
       // 공유문서
@@ -721,15 +1038,26 @@ createApp({
       // 설정
       settingsTab,
       config, configSaved, testNum, testLoading, testResult,
+      fetchMethods, newCookieKey, newCookieVal, addApiCookie, removeApiCookie,
       newMember, memberError, assignmentRules, newRuleCategory, newRuleAssigneeId, newRuleNote,
       loadConfig, saveConfig, testFetch, addMember, toggleMember, moveMember,
       loadAssignmentRules, saveRule, deleteRule, selectorFields,
+      // 데이터 Sync 모달
+      syncModalOpen, syncModalItems, syncModalCurrent, syncModalRunning,
+      openSyncModal, runBatchSync, resetSyncModal, closeSyncModal,
       // 휴가
       vacations, newVacAssigneeId, newVacDate, newVacType,
+      vacHistoryYear, vacHistoryMonth, vacHistoryYears, vacHistoryFiltered,
       loadVacations, addVacation, deleteVacation,
+      // 배치 처리
+      batchFromDate, batchModalOpen, batchModalItems, batchModalCurrent, batchModalRunning,
+      openBatchModal, runBatchModal, resetBatchModal, closeBatchModal,
       // 유형 관리
-      categoryList, newCategoryName, categoryError,
-      addCategory, deleteCategoryItem, moveCategoryItem,
+      PROTECTED_GROUPS, selectedGroupCode, newGroupCode, newGroupLabel, groupError,
+      newItemName, newItemValue, itemError,
+      currentGroup, currentGroupItems,
+      selectGroup, addTypeGroup, deleteTypeGroup, moveTypeGroup,
+      addTypeItem, deleteTypeItem, moveTypeItem,
     };
   }
 }).mount('#app');

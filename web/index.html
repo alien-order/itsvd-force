@@ -5,6 +5,8 @@
   <title>VOC Manager</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor.min.css">
+  <script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
 </head>
 <body>
 <div id="app" class="app-layout">
@@ -13,14 +15,14 @@
        사이드바
   ══════════════════════════════════════════════ -->
   <aside class="sidebar">
-    <div class="px-5 py-5 border-b border-slate-700">
-      <div class="text-white font-bold text-base tracking-tight">VOC Manager</div>
-      <div class="text-slate-400 text-xs mt-0.5">업무 관리 시스템</div>
+    <div class="px-4 py-3.5 border-b border-white/5">
+      <div class="text-white font-bold tracking-tight" style="font-size:13px">VOC Manager</div>
+      <div class="text-slate-500 mt-0.5" style="font-size:10.5px">업무 관리 시스템</div>
     </div>
 
-    <nav class="flex-1 py-3 overflow-y-auto">
-      <div class="px-3">
-        <div class="text-slate-500 text-xs font-semibold px-3 mb-2 uppercase tracking-wider">VOC</div>
+    <nav class="flex-1 py-2 overflow-y-auto">
+      <div class="px-2">
+        <div class="text-slate-600 px-2 mb-1 uppercase tracking-wider font-semibold" style="font-size:10px">VOC</div>
 
         <div @click="switchMenu('allvoc')" :class="['nav-item', activeMenu==='allvoc'?'active':'']">
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
@@ -38,7 +40,7 @@
           VOC 통계
         </div>
 
-        <div class="text-slate-500 text-xs font-semibold px-3 mt-4 mb-2 uppercase tracking-wider">지식</div>
+        <div class="text-slate-600 px-2 mt-3 mb-1 uppercase tracking-wider font-semibold" style="font-size:10px">지식</div>
 
         <div @click="switchMenu('knowledge')" :class="['nav-item', activeMenu==='knowledge'?'active':'']">
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
@@ -50,7 +52,7 @@
           공유문서
         </div>
 
-        <div class="text-slate-500 text-xs font-semibold px-3 mt-4 mb-2 uppercase tracking-wider">시스템</div>
+        <div class="text-slate-600 px-2 mt-3 mb-1 uppercase tracking-wider font-semibold" style="font-size:10px">시스템</div>
 
         <div @click="switchMenu('settings')" :class="['nav-item', activeMenu==='settings'?'active':'']">
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3" stroke-width="2"/></svg>
@@ -60,22 +62,26 @@
     </nav>
 
     <!-- 사이드바 하단: 담당자 현황 -->
-    <div class="border-t border-slate-700 px-4 py-3">
-      <div class="text-slate-500 text-xs mb-2">처리중 현황</div>
-      <div class="space-y-1.5">
-        <div v-for="w in workload.filter(x=>x.active)" :key="w.id" class="flex items-center gap-2">
-          <div :class="['avatar sm', w.is_absent?'opacity-40':'']" style="background:#334155;color:#94a3b8">{{ w.name.charAt(0) }}</div>
-          <div class="flex-1 min-w-0">
-            <div :class="['text-xs truncate', w.is_absent?'text-slate-500':'text-slate-300']">{{ w.name }}</div>
-            <div v-if="w.vacation_type" class="text-xs text-amber-400 leading-tight">{{ w.vacation_type }}</div>
-          </div>
-          <span v-if="w.priority_next" class="text-xs text-blue-400 opacity-80" title="1순번 우선">★</span>
-          <span v-else-if="w.hold_turns>0" class="text-xs text-orange-400 opacity-70">↩</span>
-          <div v-if="!w.is_absent" class="text-xs font-semibold" :class="(w.open_count+w.in_progress_count)>3?'text-orange-400':'text-slate-400'">
+    <div class="border-t border-white/5 px-3 py-2.5">
+      <div class="text-slate-600 text-xs font-medium mb-1.5 px-1">처리중 현황</div>
+      <div class="space-y-1">
+        <div v-for="w in workload.filter(x=>x.active)" :key="w.id" class="flex items-center justify-between px-1 py-0.5">
+          <span :class="['text-xs truncate', w.is_absent?'text-slate-600':'text-slate-400']">{{ w.name }}</span>
+          <span v-if="!w.is_absent" class="text-xs font-semibold ml-2 shrink-0"
+            :class="(w.open_count+w.in_progress_count)>3?'text-orange-400':'text-slate-500'">
             {{ w.open_count + w.in_progress_count }}
-          </div>
+          </span>
         </div>
       </div>
+    </div>
+
+    <!-- 줌 컨트롤 -->
+    <div class="border-t border-white/5 flex items-center justify-center gap-1 px-3 py-2">
+      <button @click="setZoom(-0.05)"
+        class="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:bg-white/8 hover:text-slate-300 transition-colors text-base leading-none select-none">−</button>
+      <span class="text-slate-500 w-9 text-center" style="font-size:11px">{{ Math.round(uiZoom * 100) }}%</span>
+      <button @click="setZoom(0.05)"
+        class="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:bg-white/8 hover:text-slate-300 transition-colors text-base leading-none select-none">+</button>
     </div>
   </aside>
 
@@ -86,7 +92,7 @@
 
     <!-- ── 1. 전체 VOC ── -->
     <template v-if="activeMenu==='allvoc'">
-      <div class="px-4 py-3 border-b border-slate-100">
+      <div class="px-3 py-2.5 border-b border-slate-100">
         <div class="font-semibold text-slate-800 text-sm mb-2">전체 VOC
           <span class="text-slate-400 font-normal text-xs ml-1">{{ allVocList.length }}건</span>
         </div>
@@ -136,7 +142,7 @@
 
     <!-- ── 2. 처리중인 VOC ── -->
     <template v-if="activeMenu==='active'">
-      <div class="px-4 py-3 border-b border-slate-100">
+      <div class="px-3 py-2.5 border-b border-slate-100">
         <div class="flex items-center gap-2 mb-2">
           <span class="font-semibold text-slate-800 text-sm flex-1">처리중인 VOC</span>
           <button @click="showFetchForm=!showFetchForm" class="btn btn-primary text-xs px-3 py-1.5">+ 새 VOC</button>
@@ -160,10 +166,22 @@
       <div v-if="showFetchForm" class="border-b border-slate-100 bg-blue-50 px-4 py-3">
         <div class="flex gap-2 mb-2">
           <input v-model="vocNumInput" @keyup.enter="fetchVoc" type="text" placeholder="VOC 번호"
-            class="inp text-xs py-1.5 flex-1">
-          <button @click="fetchVoc" :disabled="vocFetching" class="btn btn-dark text-xs px-3 whitespace-nowrap">
-            {{ vocFetching ? '...' : '불러오기' }}
+            class="inp text-xs py-1.5 flex-1" :disabled="vocFetching">
+          <button @click="fetchVoc" :disabled="vocFetching" class="btn btn-dark text-xs px-3 whitespace-nowrap gap-1.5">
+            <svg v-if="vocFetching" class="animate-spin w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"/>
+              <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" class="opacity-75"/>
+            </svg>
+            {{ vocFetching ? '로딩 중...' : '불러오기' }}
           </button>
+        </div>
+        <!-- 로딩 스켈레톤 -->
+        <div v-if="vocFetching" class="space-y-2 animate-pulse mt-1">
+          <div class="h-3 bg-slate-200 rounded w-2/3"></div>
+          <div class="h-3 bg-slate-200 rounded w-full"></div>
+          <div class="h-3 bg-slate-200 rounded w-5/6"></div>
+          <div class="h-3 bg-slate-200 rounded w-3/4"></div>
+          <p class="text-xs text-slate-400 text-center pt-1">페이지 로딩 중 (동적 페이지는 10~20초 소요)</p>
         </div>
         <p v-if="fetchError" class="text-xs text-red-500 mb-2 whitespace-pre-line">{{ fetchError }}</p>
         <div v-if="previewData" class="space-y-2">
@@ -208,7 +226,7 @@
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5 mb-0.5">
                 <span class="text-xs font-mono text-slate-400">{{ v.voc_number||('#'+v.id) }}</span>
-                <span :class="['badge','priority-'+v.priority]">{{ priorityLabel[v.priority] }}</span>
+                <span v-if="v.priority && v.priority !== 'normal'" :class="['badge','priority-'+v.priority]">{{ priorityLabel[v.priority] }}</span>
                 <span :class="['badge','status-'+v.status]">{{ statusLabel[v.status] }}</span>
               </div>
               <div class="text-sm font-medium text-slate-800 truncate">{{ v.title }}</div>
@@ -226,21 +244,11 @@
 
       <!-- 하단 버튼 -->
       <div class="border-t border-slate-100 px-4 py-3 space-y-2">
-        <button @click="syncStatuses" :disabled="syncing"
-          :class="['btn w-full text-xs', syncing?'btn-secondary':'bg-teal-600 text-white hover:bg-teal-700']">
-          {{ syncing ? '동기화 중...' : '상태 동기화' }}
+        <button @click="openSyncModal"
+          class="btn w-full text-xs bg-indigo-600 text-white hover:bg-indigo-700">
+          데이터 Sync
+          <span v-if="activeVocList.length" class="ml-1 text-indigo-200 text-xs">{{ activeVocList.length }}건</span>
         </button>
-        <div v-if="syncResult" class="text-xs rounded-lg px-3 py-2"
-          :class="syncResult.success?'bg-teal-50 text-teal-800':'bg-red-50 text-red-700'">
-          <template v-if="syncResult.success">
-            <span class="font-semibold">{{ syncResult.updated?.length||0 }}건 변경</span>
-            <span v-if="syncResult.failed?.length" class="ml-2 text-slate-400">실패 {{ syncResult.failed.length }}건</span>
-            <div v-for="u in syncResult.updated" :key="u.id" class="text-slate-500">
-              {{ u.voc_number }}: {{ statusLabel[u.old] }} → {{ statusLabel[u.new] }}
-            </div>
-          </template>
-          <span v-else>{{ syncResult.error }}</span>
-        </div>
         <button @click="copyReport" :class="['btn w-full text-xs', reportCopied?'btn-secondary':'btn-dark']">
           {{ reportCopied ? '복사됨 ✓' : '메신저 현황 복사' }}
         </button>
@@ -249,7 +257,7 @@
 
     <!-- ── 3. VOC 통계 ── -->
     <template v-if="activeMenu==='stats'">
-      <div class="px-4 py-3 border-b border-slate-100">
+      <div class="px-3 py-2.5 border-b border-slate-100">
         <div class="font-semibold text-slate-800 text-sm mb-3">VOC 통계</div>
         <div class="flex gap-1">
           <button v-for="m in [{k:'monthly',l:'월별'},{k:'weekly',l:'주별'},{k:'assignee',l:'담당자별'}]" :key="m.k"
@@ -306,7 +314,7 @@
 
     <!-- ── 4. 레퍼런스 ── -->
     <template v-if="activeMenu==='knowledge'">
-      <div class="px-4 py-3 border-b border-slate-100">
+      <div class="px-3 py-2.5 border-b border-slate-100">
         <div class="flex items-center gap-2 mb-2">
           <span class="font-semibold text-slate-800 text-sm flex-1">레퍼런스</span>
           <button @click="newKnowledge" class="btn btn-primary text-xs px-3 py-1.5">+ 등록</button>
@@ -318,9 +326,7 @@
         </select>
         <select v-model="knowledgeProcessType" @change="loadKnowledge" class="inp text-xs py-1">
           <option value="all">전체 처리유형</option>
-          <option value="데이터추출">데이터추출</option>
-          <option value="로직분석">로직분석</option>
-          <option value="가이드">가이드</option>
+          <option v-for="p in processTypeList" :key="p.id" :value="p.name">{{ p.name }}</option>
         </select>
       </div>
       <div class="flex-1 overflow-y-auto">
@@ -339,7 +345,7 @@
 
     <!-- ── 5. 공유문서 ── -->
     <template v-if="activeMenu==='board'">
-      <div class="px-4 py-3 border-b border-slate-100">
+      <div class="px-3 py-2.5 border-b border-slate-100">
         <div class="flex items-center gap-2 mb-2">
           <span class="font-semibold text-slate-800 text-sm flex-1">공유문서</span>
           <button @click="newPost" class="btn btn-primary text-xs px-3 py-1.5">+ 새 글</button>
@@ -366,7 +372,7 @@
 
     <!-- ── 6. 설정 ── -->
     <template v-if="activeMenu==='settings'">
-      <div class="px-4 py-3 border-b border-slate-100">
+      <div class="px-3 py-2.5 border-b border-slate-100">
         <div class="font-semibold text-slate-800 text-sm">설정</div>
       </div>
       <div class="flex-1 overflow-y-auto py-1">
@@ -417,9 +423,18 @@
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="shrink-0 text-slate-400"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>
           <div>
             <div class="text-sm font-medium text-slate-800">유형 관리</div>
-            <div class="text-xs text-slate-400 mt-0.5">VOC 유형 추가 · 삭제 · 순서</div>
+            <div class="text-xs text-slate-400 mt-0.5">그룹 · 아이템 추가 · 삭제 · 순서</div>
           </div>
-          <span v-if="categoryList.length" class="ml-auto text-xs text-slate-400">{{ categoryList.length }}</span>
+          <span v-if="typeGroups.length" class="ml-auto text-xs text-slate-400">{{ typeGroups.length }}</span>
+        </div>
+
+        <div @click="settingsTab='batch'"
+          :class="['board-item flex items-center gap-3', settingsTab==='batch'?'selected':'']">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="shrink-0 text-slate-400"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          <div>
+            <div class="text-sm font-medium text-slate-800">배치 처리</div>
+            <div class="text-xs text-slate-400 mt-0.5">날짜 기준 전체 데이터 Sync</div>
+          </div>
         </div>
 
       </div>
@@ -436,10 +451,10 @@
     <template v-if="(activeMenu==='active'||activeMenu==='allvoc') && selectedVoc">
 
       <!-- 헤더 -->
-      <div class="bg-white border-b border-slate-200 px-6 py-4">
+      <div class="bg-white border-b border-slate-200 px-5 py-3">
         <div class="flex items-center gap-2 mb-1 flex-wrap">
           <span class="text-xs font-mono bg-slate-100 px-2 py-0.5 rounded text-slate-500">{{ selectedVoc.voc_number||('#'+selectedVoc.id) }}</span>
-          <span :class="['badge','priority-'+selectedVoc.priority]">{{ priorityLabel[selectedVoc.priority] }}</span>
+          <span v-if="selectedVoc.priority && selectedVoc.priority !== 'normal'" :class="['badge','priority-'+selectedVoc.priority]">{{ priorityLabel[selectedVoc.priority] }}</span>
           <span :class="['badge','status-'+selectedVoc.status]">{{ statusLabel[selectedVoc.status] }}</span>
           <span v-if="selectedVoc.category" class="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded">{{ selectedVoc.category }}</span>
           <span v-if="selectedVoc.due_date" :class="['text-xs font-semibold', ddayCls(selectedVoc.due_date)]">
@@ -587,9 +602,7 @@
                 </select>
                 <select v-model="kLinkForm.process_type" class="inp text-sm">
                   <option value="">처리유형</option>
-                  <option value="데이터추출">데이터추출</option>
-                  <option value="로직분석">로직분석</option>
-                  <option value="가이드">가이드</option>
+                  <option v-for="p in processTypeList" :key="p.id" :value="p.name">{{ p.name }}</option>
                 </select>
               </div>
               <input v-model="kLinkForm.tags" type="text" placeholder="태그 (쉼표 구분)" class="inp text-sm">
@@ -621,7 +634,7 @@
                 <span class="font-medium">{{ n.note_date || n.created_at?.slice(0,10) }}</span>
                 <span v-if="n.work_minutes" class="bg-slate-100 px-1.5 py-0.5 rounded">{{ n.work_minutes }}분</span>
               </div>
-              <p class="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{{ n.content }}</p>
+              <div v-html="renderContent(n.content)" class="text-sm text-slate-700 leading-relaxed prose-content"></div>
             </div>
           </div>
           <div v-else class="text-center text-xs text-slate-400 py-8">메모가 없습니다</div>
@@ -746,9 +759,7 @@
               <label class="block text-xs font-medium text-slate-600 mb-1">처리유형</label>
               <select v-model="kForm.process_type" class="inp">
                 <option value="">선택 없음</option>
-                <option value="데이터추출">데이터추출</option>
-                <option value="로직분석">로직분석</option>
-                <option value="가이드">가이드</option>
+                <option v-for="p in processTypeList" :key="p.id" :value="p.name">{{ p.name }}</option>
               </select>
             </div>
           </div>
@@ -758,7 +769,7 @@
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-600 mb-1">내용</label>
-            <textarea v-model="kForm.content" rows="14" placeholder="처리 가이드, 주의사항 등..." class="inp"></textarea>
+            <div id="k-editor-container" class="editor-wrap"></div>
           </div>
         </div>
       </div>
@@ -793,8 +804,8 @@
           <div v-if="selectedKnowledge.tags" class="flex gap-1 flex-wrap mb-4">
             <span v-for="tag in selectedKnowledge.tags.split(',')" :key="tag" class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded"># {{ tag.trim() }}</span>
           </div>
-          <div class="card p-5">
-            <p class="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{{ selectedKnowledge.content }}</p>
+          <div class="card p-5 prose-content">
+            <div v-html="renderContent(selectedKnowledge.content)" class="text-sm text-slate-700 leading-relaxed"></div>
           </div>
         </div>
 
@@ -841,7 +852,7 @@
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-600 mb-1">내용</label>
-            <textarea v-model="postForm.content" rows="16" placeholder="내용을 입력하세요..." class="inp"></textarea>
+            <div id="b-editor-container" class="editor-wrap"></div>
           </div>
         </div>
       </div>
@@ -859,8 +870,8 @@
             <button @click="deletePost(selectedPost.id)" class="btn btn-danger text-sm">삭제</button>
           </div>
         </div>
-        <div class="card p-5 mb-5">
-          <p class="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{{ selectedPost.content }}</p>
+        <div class="card p-5 mb-5 prose-content">
+          <div v-html="renderContent(selectedPost.content)" class="text-sm text-slate-700 leading-relaxed"></div>
         </div>
         <div class="card p-5">
           <div class="flex items-center justify-between mb-3">
@@ -894,34 +905,106 @@
       <!-- ▸ VOC 조회 설정 -->
       <template v-if="settingsTab==='scraping'">
         <h2 class="text-base font-semibold text-slate-800">VOC 조회 설정</h2>
+
+        <!-- 조회 방식 선택 -->
         <div class="card p-5">
-          <h3 class="text-sm font-semibold text-slate-700 mb-3">조회 URL 패턴</h3>
-          <input v-model="config.url_pattern" type="text" placeholder="https://내부시스템/voc/{number}" class="inp mb-2 font-mono text-sm">
-          <p class="text-xs text-slate-400 mb-4"><code class="bg-slate-100 px-1 rounded">{number}</code> 위치에 VOC 번호가 들어갑니다</p>
-          <div class="flex items-center justify-between pt-3 border-t border-slate-100">
-            <div>
-              <p class="text-sm font-medium text-slate-700">동적 페이지 (JS 렌더링)</p>
-              <p class="text-xs text-slate-400 mt-0.5">playwright 필요: <code class="bg-slate-100 px-1 rounded">pip install playwright && playwright install chromium</code></p>
-            </div>
-            <div @click="config.dynamic=!config.dynamic" :class="['toggle-track', config.dynamic?'bg-blue-600':'bg-slate-200']">
-              <div :class="['toggle-thumb', config.dynamic?'translate-x-[18px]':'translate-x-[3px]']"></div>
-            </div>
+          <h3 class="text-sm font-semibold text-slate-700 mb-3">조회 방식</h3>
+          <div class="flex gap-2">
+            <button v-for="m in fetchMethods" :key="m.key" @click="config.fetch_method=m.key"
+              :class="['flex-1 text-xs px-3 py-2.5 rounded-lg border font-medium transition-colors text-center',
+                config.fetch_method===m.key
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300']">
+              <div>{{ m.label }}</div>
+              <div class="opacity-70 mt-0.5" style="font-size:10px">{{ m.desc }}</div>
+            </button>
           </div>
         </div>
-        <div class="card p-5">
-          <h3 class="text-sm font-semibold text-slate-700 mb-4">CSS 셀렉터</h3>
-          <div class="space-y-3">
-            <div v-for="f in selectorFields" :key="f.key" class="flex items-center gap-3">
-              <label class="w-24 text-sm text-slate-600 shrink-0">{{ f.label }}</label>
-              <input v-model="config.selectors[f.key]" type="text" :placeholder="f.hint||(f.key+' 셀렉터')" class="inp font-mono text-sm">
+
+        <!-- 정적 HTTP -->
+        <template v-if="config.fetch_method==='static'">
+          <div class="card p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">URL 패턴</h3>
+            <input v-model="config.url_pattern" type="text" placeholder="https://내부시스템/voc/{number}" class="inp mb-2 font-mono text-sm">
+            <p class="text-xs text-slate-400"><code class="bg-slate-100 px-1 rounded">{number}</code> 위치에 VOC 번호가 들어갑니다</p>
+          </div>
+          <div class="card p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-4">CSS 셀렉터</h3>
+            <div class="space-y-3">
+              <div v-for="f in selectorFields" :key="f.key" class="flex items-center gap-3">
+                <label class="w-24 text-sm text-slate-600 shrink-0">{{ f.label }}</label>
+                <input v-model="config.selectors[f.key]" type="text" :placeholder="f.hint||(f.key+' 셀렉터')" class="inp font-mono text-sm">
+              </div>
             </div>
           </div>
-        </div>
+        </template>
+
+        <!-- XPath 대기 -->
+        <template v-if="config.fetch_method==='xpath'">
+          <div class="card p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">URL 패턴 · 대기 시간</h3>
+            <input v-model="config.url_pattern" type="text" placeholder="https://내부시스템/voc/{number}" class="inp mb-2 font-mono text-sm">
+            <p class="text-xs text-slate-400 mb-4"><code class="bg-slate-100 px-1 rounded">{number}</code> 위치에 VOC 번호가 들어갑니다</p>
+            <div class="flex items-center gap-3 pt-3 border-t border-slate-100">
+              <label class="text-sm text-slate-600 shrink-0 w-24">대기 시간(초)</label>
+              <input v-model.number="config.xpath_wait_seconds" type="number" min="0" max="60" class="inp w-24 text-sm">
+              <p class="text-xs text-slate-400">페이지 접속 후 XPath 추출 전 대기</p>
+            </div>
+            <p class="text-xs text-slate-400 mt-3">playwright 필요: <code class="bg-slate-100 px-1 rounded">pip install playwright && playwright install chromium</code></p>
+          </div>
+          <div class="card p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-4">XPath 셀렉터</h3>
+            <div class="space-y-3">
+              <div v-for="f in selectorFields" :key="f.key" class="flex items-center gap-3">
+                <label class="w-24 text-sm text-slate-600 shrink-0">{{ f.label }}</label>
+                <input v-model="config.xpath_selectors[f.key]" type="text" :placeholder="'//div[@class=&quot;'+f.key+'&quot;]'" class="inp font-mono text-sm">
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- 쿠키 API -->
+        <template v-if="config.fetch_method==='api_cookie'">
+          <div class="card p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">API URL 패턴</h3>
+            <input v-model="config.api_url_pattern" type="text" placeholder="https://내부시스템/api/voc/{number}" class="inp mb-2 font-mono text-sm">
+            <p class="text-xs text-slate-400">JSON을 반환하는 엔드포인트. <code class="bg-slate-100 px-1 rounded">{number}</code>에 VOC 번호가 들어갑니다</p>
+          </div>
+          <div class="card p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">쿠키 설정</h3>
+            <div v-if="config.api_cookies.length>0" class="divide-y divide-slate-100 mb-3">
+              <div v-for="(c, i) in config.api_cookies" :key="i" class="flex items-center gap-2 py-2">
+                <span class="text-xs font-mono text-blue-600 w-32 truncate shrink-0">{{ c.key }}</span>
+                <span class="text-xs text-slate-300 shrink-0">=</span>
+                <span class="text-xs font-mono text-slate-500 flex-1 truncate">{{ c.value }}</span>
+                <button @click="removeApiCookie(i)" class="text-slate-300 hover:text-red-500 text-sm shrink-0 ml-1">×</button>
+              </div>
+            </div>
+            <div v-else class="text-xs text-slate-400 mb-3 py-2.5 text-center bg-slate-50 rounded-lg">쿠키가 없습니다</div>
+            <div class="flex gap-2">
+              <input v-model="newCookieKey" @keyup.enter="addApiCookie" type="text" placeholder="쿠키 이름" class="inp text-xs flex-1">
+              <input v-model="newCookieVal" @keyup.enter="addApiCookie" type="text" placeholder="값" class="inp text-xs flex-1">
+              <button @click="addApiCookie" class="btn btn-secondary text-xs shrink-0">추가</button>
+            </div>
+          </div>
+          <div class="card p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-2">JSON 필드 매핑</h3>
+            <p class="text-xs text-slate-400 mb-3">API 응답 JSON 경로를 입력하세요. 중첩은 점(.)으로 구분. 예: <code class="bg-slate-100 px-1 rounded">data.title</code></p>
+            <div class="space-y-3">
+              <div v-for="f in selectorFields.slice(0,6)" :key="f.key" class="flex items-center gap-3">
+                <label class="w-24 text-sm text-slate-600 shrink-0">{{ f.label }}</label>
+                <input v-model="config.api_field_map[f.key]" type="text" :placeholder="f.key+' JSON 경로'" class="inp font-mono text-sm">
+              </div>
+            </div>
+          </div>
+        </template>
+
         <div class="flex gap-3">
           <button @click="saveConfig" :class="['btn', configSaved?'btn-secondary':'btn-primary']">
             {{ configSaved ? '저장됨 ✓' : '설정 저장' }}
           </button>
         </div>
+
         <div class="card p-5">
           <h3 class="text-sm font-semibold text-slate-700 mb-3">연결 테스트</h3>
           <div class="flex gap-2 mb-3">
@@ -991,14 +1074,17 @@
             </div>
           </div>
           <div class="grid grid-cols-3 gap-2 mb-2">
-            <input v-model="newRuleCategory" type="text" placeholder="카테고리명 *" class="inp text-sm">
+            <select v-model="newRuleCategory" class="inp text-sm">
+              <option value="">카테고리 선택 *</option>
+              <option v-for="c in categoryList" :key="c.id" :value="c.name">{{ c.name }}</option>
+            </select>
             <select v-model="newRuleAssigneeId" class="inp text-sm">
               <option value="">담당자 선택 *</option>
               <option v-for="a in assignees.filter(x=>x.active)" :key="a.id" :value="String(a.id)">{{ a.name }}</option>
             </select>
             <input v-model="newRuleNote" type="text" placeholder="메모 (선택)" class="inp text-sm">
           </div>
-          <button @click="saveRule" :disabled="!newRuleCategory.trim()||!newRuleAssigneeId" class="btn btn-primary text-xs disabled:opacity-40">
+          <button @click="saveRule" :disabled="!newRuleCategory||!newRuleAssigneeId" class="btn btn-primary text-xs disabled:opacity-40">
             규칙 추가
           </button>
         </div>
@@ -1043,10 +1129,18 @@
           </div>
         </div>
         <div class="card p-5">
-          <h3 class="text-sm font-semibold text-slate-700 mb-3">지난 휴가 이력</h3>
-          <div v-if="!vacations.filter(v=>v.is_past).length" class="text-xs text-slate-400 py-2 text-center">이력이 없습니다</div>
+          <div class="flex items-center gap-2 mb-3">
+            <h3 class="text-sm font-semibold text-slate-700 flex-1">지난 휴가 이력</h3>
+            <select v-model="vacHistoryYear" class="inp text-xs py-1 w-20">
+              <option v-for="y in vacHistoryYears" :key="y" :value="y">{{ y }}</option>
+            </select>
+            <select v-model="vacHistoryMonth" class="inp text-xs py-1 w-16">
+              <option v-for="m in ['01','02','03','04','05','06','07','08','09','10','11','12']" :key="m" :value="m">{{ m }}월</option>
+            </select>
+          </div>
+          <div v-if="!vacHistoryFiltered.length" class="text-xs text-slate-400 py-2 text-center">이력이 없습니다</div>
           <div v-else class="divide-y divide-slate-100">
-            <div v-for="v in vacations.filter(v=>v.is_past)" :key="v.id" class="flex items-center gap-3 py-2 opacity-60">
+            <div v-for="v in vacHistoryFiltered" :key="v.id" class="flex items-center gap-3 py-2 opacity-60">
               <div class="avatar sm shrink-0">{{ v.assignee_name.charAt(0) }}</div>
               <span class="text-sm text-slate-600 w-14 shrink-0">{{ v.assignee_name }}</span>
               <span class="text-sm text-slate-500 flex-1 font-mono">{{ v.vacation_date }}</span>
@@ -1061,26 +1155,117 @@
         </div>
       </template>
 
+      <!-- ▸ 배치 처리 -->
+      <template v-if="settingsTab==='batch'">
+        <h2 class="text-base font-semibold text-slate-800">배치 처리</h2>
+        <div class="card p-5">
+          <h3 class="text-sm font-semibold text-slate-700 mb-2">날짜 기준 전체 데이터 Sync</h3>
+          <p class="text-xs text-slate-400 mb-4">VOC 번호 앞 8자리(등록일, 예: <code class="bg-slate-100 px-1 rounded">20260428</code>)가 기준일 이후인 모든 VOC를 순서대로 데이터 Sync합니다. 데이터가 없거나 fetch에 실패한 건은 건너뜁니다.</p>
+          <div class="flex items-center gap-3 mb-5">
+            <label class="text-sm text-slate-600 shrink-0 w-20">기준일 이후</label>
+            <input v-model="batchFromDate" type="date" class="inp text-sm flex-1">
+          </div>
+          <button @click="openBatchModal" :disabled="!batchFromDate"
+            class="btn btn-primary disabled:opacity-40">
+            배치 Sync 시작
+          </button>
+        </div>
+      </template>
+
       <!-- ▸ 유형 관리 -->
       <template v-if="settingsTab==='categories'">
         <h2 class="text-base font-semibold text-slate-800">유형 관리</h2>
-        <div class="card p-5">
-          <p class="text-xs text-slate-400 mb-4">VOC 유형 목록을 관리합니다. 모든 유형 드롭다운에 반영됩니다.</p>
-          <div class="flex gap-2 mb-4">
-            <input v-model="newCategoryName" @keyup.enter="addCategory" type="text" placeholder="유형명 입력" class="inp flex-1">
-            <button @click="addCategory" class="btn btn-primary">추가</button>
-          </div>
-          <p v-if="categoryError" class="text-xs text-red-500 mb-3">{{ categoryError }}</p>
-          <div v-if="categoryList.length===0" class="text-xs text-slate-400 py-4 text-center bg-slate-50 rounded-lg">등록된 유형이 없습니다</div>
-          <div v-else class="divide-y divide-slate-100">
-            <div v-for="(c, idx) in categoryList" :key="c.id" class="flex items-center gap-2 py-2.5">
-              <div class="flex flex-col gap-0.5 shrink-0">
-                <button @click="moveCategoryItem(idx,-1)" :disabled="idx===0" class="text-slate-300 hover:text-slate-600 disabled:opacity-20 text-xs leading-none">▲</button>
-                <button @click="moveCategoryItem(idx,1)" :disabled="idx===categoryList.length-1" class="text-slate-300 hover:text-slate-600 disabled:opacity-20 text-xs leading-none">▼</button>
+        <p class="text-xs text-slate-400 -mt-3">그룹 코드로 항목을 관리합니다. category·process_type·voc_status 는 기본 그룹으로 삭제할 수 없습니다.</p>
+
+        <div class="grid grid-cols-2 gap-4">
+          <!-- 왼쪽: 그룹 목록 -->
+          <div class="card p-4 flex flex-col gap-3">
+            <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">그룹</div>
+            <!-- 그룹 추가 폼 -->
+            <div class="space-y-1.5">
+              <input v-model="newGroupCode" type="text" placeholder="코드 (영문·_)" class="inp text-xs py-1.5"
+                @keyup.enter="newGroupLabel.trim() && addTypeGroup()">
+              <div class="flex gap-1.5">
+                <input v-model="newGroupLabel" type="text" placeholder="그룹명 *" class="inp text-xs py-1.5 flex-1"
+                  @keyup.enter="addTypeGroup">
+                <button @click="addTypeGroup" class="btn btn-primary text-xs px-3 shrink-0">추가</button>
               </div>
-              <span class="text-xs text-slate-400 w-4 text-center shrink-0">{{ idx+1 }}</span>
-              <span class="text-sm flex-1 text-slate-800">{{ c.name }}</span>
-              <button @click="deleteCategoryItem(c.id)" class="btn btn-danger text-xs shrink-0">삭제</button>
+              <p v-if="groupError" class="text-xs text-red-500">{{ groupError }}</p>
+            </div>
+            <!-- 그룹 목록 -->
+            <div v-if="typeGroups.length===0" class="text-xs text-slate-400 py-4 text-center bg-slate-50 rounded-lg">
+              그룹이 없습니다
+            </div>
+            <div v-else class="divide-y divide-slate-100">
+              <div v-for="(g, idx) in typeGroups" :key="g.id"
+                :class="['flex items-center gap-2 py-2 cursor-pointer rounded-md px-2 transition-colors',
+                  selectedGroupCode===g.code ? 'bg-blue-50' : 'hover:bg-slate-50']"
+                @click="selectGroup(g.code)">
+                <div class="flex flex-col gap-0.5 shrink-0">
+                  <button @click.stop="moveTypeGroup(idx,-1)" :disabled="idx===0"
+                    class="text-slate-300 hover:text-slate-600 disabled:opacity-20 text-xs leading-none">▲</button>
+                  <button @click.stop="moveTypeGroup(idx,1)" :disabled="idx===typeGroups.length-1"
+                    class="text-slate-300 hover:text-slate-600 disabled:opacity-20 text-xs leading-none">▼</button>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div :class="['text-sm font-medium truncate', selectedGroupCode===g.code?'text-blue-700':'text-slate-800']">{{ g.label }}</div>
+                  <div class="text-xs text-slate-400 font-mono">{{ g.code }}</div>
+                </div>
+                <span v-if="!PROTECTED_GROUPS.includes(g.code)"
+                  @click.stop="deleteTypeGroup(g.id, g.code)"
+                  class="text-slate-300 hover:text-red-500 text-sm cursor-pointer shrink-0">×</span>
+                <span v-else class="text-slate-200 text-xs shrink-0" title="기본 그룹">🔒</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 오른쪽: 선택된 그룹의 항목 -->
+          <div class="card p-4 flex flex-col gap-3">
+            <template v-if="selectedGroupCode">
+              <div class="flex items-center gap-2">
+                <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider flex-1">
+                  {{ currentGroup?.label }} 항목
+                </div>
+                <span class="text-xs text-slate-400">{{ currentGroupItems.length }}개</span>
+              </div>
+              <!-- 항목 추가 폼 -->
+              <div class="space-y-1.5">
+                <input v-model="newItemName" type="text" placeholder="항목명 *" class="inp text-xs py-1.5"
+                  @keyup.enter="addTypeItem">
+                <div v-if="selectedGroupCode==='voc_status'" class="flex gap-1.5 items-center">
+                  <input v-model="newItemValue" type="text" placeholder="값 코드 (예: open)" class="inp text-xs py-1.5 flex-1">
+                  <span class="text-xs text-slate-400 shrink-0">선택</span>
+                </div>
+                <div class="flex gap-1.5">
+                  <div class="flex-1"></div>
+                  <button @click="addTypeItem" :disabled="!newItemName.trim()"
+                    class="btn btn-primary text-xs px-3 disabled:opacity-40">추가</button>
+                </div>
+                <p v-if="itemError" class="text-xs text-red-500">{{ itemError }}</p>
+              </div>
+              <!-- 항목 목록 -->
+              <div v-if="currentGroupItems.length===0" class="text-xs text-slate-400 py-4 text-center bg-slate-50 rounded-lg">
+                등록된 항목이 없습니다
+              </div>
+              <div v-else class="divide-y divide-slate-100">
+                <div v-for="(it, idx) in currentGroupItems" :key="it.id" class="flex items-center gap-2 py-2">
+                  <div class="flex flex-col gap-0.5 shrink-0">
+                    <button @click="moveTypeItem(idx,-1)" :disabled="idx===0"
+                      class="text-slate-300 hover:text-slate-600 disabled:opacity-20 text-xs leading-none">▲</button>
+                    <button @click="moveTypeItem(idx,1)" :disabled="idx===currentGroupItems.length-1"
+                      class="text-slate-300 hover:text-slate-600 disabled:opacity-20 text-xs leading-none">▼</button>
+                  </div>
+                  <span class="text-xs text-slate-400 w-4 text-center shrink-0">{{ idx+1 }}</span>
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm text-slate-800">{{ it.name }}</div>
+                    <div v-if="it.value && it.value !== it.name" class="text-xs font-mono text-slate-400">{{ it.value }}</div>
+                  </div>
+                  <button @click="deleteTypeItem(it.id)" class="text-slate-300 hover:text-red-500 text-sm shrink-0">×</button>
+                </div>
+              </div>
+            </template>
+            <div v-else class="flex-1 flex items-center justify-center text-xs text-slate-400 py-8">
+              왼쪽에서 그룹을 선택하세요
             </div>
           </div>
         </div>
@@ -1089,6 +1274,152 @@
     </div>
 
   </div><!-- /right-panel -->
+
+  <!-- ══════════════════════════════════════════════
+       데이터 Sync 모달
+  ══════════════════════════════════════════════ -->
+  <div v-if="syncModalOpen"
+    class="fixed inset-0 z-50 flex items-center justify-center"
+    style="background:rgba(0,0,0,.45)"
+    @click.self="closeSyncModal">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 flex flex-col" style="max-height:80vh">
+      <!-- 헤더 -->
+      <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+        <div class="flex items-center gap-3">
+          <span class="text-sm font-semibold text-slate-800">처리중 VOC 데이터 Sync</span>
+          <span v-if="syncModalRunning || syncModalItems.some(i=>i.status!=='pending')"
+            class="text-xs font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+            {{ syncModalCurrent }} / {{ syncModalItems.length }}
+          </span>
+        </div>
+        <button @click="closeSyncModal" :disabled="syncModalRunning"
+          class="text-slate-400 hover:text-slate-600 text-xl leading-none disabled:opacity-30 w-6 h-6 flex items-center justify-center">×</button>
+      </div>
+
+      <!-- VOC 목록 -->
+      <div class="overflow-y-auto flex-1 px-5 py-2">
+        <div v-if="syncModalItems.length===0" class="text-sm text-slate-400 text-center py-8">
+          처리중인 VOC가 없습니다
+        </div>
+        <div v-for="item in syncModalItems" :key="item.id"
+          class="flex items-center gap-3 py-2.5 border-b border-slate-50 last:border-0">
+          <!-- 상태 아이콘 -->
+          <div class="shrink-0 w-5 h-5 flex items-center justify-center">
+            <svg v-if="item.status==='syncing'" class="animate-spin w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"/>
+              <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" class="opacity-75"/>
+            </svg>
+            <svg v-else-if="item.status==='done'" class="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+            </svg>
+            <svg v-else-if="item.status==='failed'" class="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+            <div v-else class="w-4 h-4 rounded-full border-2 border-slate-200"></div>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-mono text-slate-400 shrink-0">{{ item.voc_number }}</span>
+              <span class="text-sm text-slate-700 truncate">{{ item.title }}</span>
+            </div>
+            <p v-if="item.error" class="text-xs text-red-500 mt-0.5 truncate" :title="item.error">{{ item.error }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 푸터 버튼 -->
+      <div class="flex gap-2 px-5 py-4 border-t border-slate-100 shrink-0">
+        <button v-if="!syncModalRunning && syncModalItems.some(i=>i.status!=='pending')"
+          @click="resetSyncModal" class="btn btn-secondary text-xs px-3">
+          초기화
+        </button>
+        <button @click="runBatchSync"
+          :disabled="syncModalRunning || syncModalItems.length===0 || !syncModalItems.some(i=>i.status==='pending')"
+          :class="['btn flex-1 text-sm', syncModalRunning?'btn-secondary':'bg-indigo-600 text-white hover:bg-indigo-700', 'disabled:opacity-40']">
+          <svg v-if="syncModalRunning" class="animate-spin w-4 h-4 mr-1.5 inline" fill="none" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"/>
+            <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" class="opacity-75"/>
+          </svg>
+          {{ syncModalRunning ? 'Sync 중...' : 'Sync 시작' }}
+        </button>
+        <button @click="closeSyncModal" :disabled="syncModalRunning" class="btn btn-secondary text-xs px-4 disabled:opacity-40">
+          닫기
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════
+       배치 처리 모달
+  ══════════════════════════════════════════════ -->
+  <div v-if="batchModalOpen"
+    class="fixed inset-0 z-50 flex items-center justify-center"
+    style="background:rgba(0,0,0,.45)"
+    @click.self="closeBatchModal">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 flex flex-col" style="max-height:80vh">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+        <div class="flex items-center gap-3">
+          <span class="text-sm font-semibold text-slate-800">배치 데이터 Sync</span>
+          <span v-if="batchModalRunning || batchModalItems.some(i=>i.status!=='pending')"
+            class="text-xs font-bold bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full">
+            {{ batchModalCurrent }} / {{ batchModalItems.length }}
+          </span>
+          <span v-else class="text-xs text-slate-400">{{ batchModalItems.length }}건</span>
+        </div>
+        <button @click="closeBatchModal" :disabled="batchModalRunning"
+          class="text-slate-400 hover:text-slate-600 text-xl leading-none disabled:opacity-30 w-6 h-6 flex items-center justify-center">×</button>
+      </div>
+
+      <div class="overflow-y-auto flex-1 px-5 py-2">
+        <div v-if="batchModalItems.length===0" class="text-sm text-slate-400 text-center py-8">
+          조건에 맞는 VOC가 없습니다
+        </div>
+        <div v-for="item in batchModalItems" :key="item.id"
+          class="flex items-center gap-3 py-2.5 border-b border-slate-50 last:border-0">
+          <div class="shrink-0 w-5 h-5 flex items-center justify-center">
+            <svg v-if="item.status==='syncing'" class="animate-spin w-4 h-4 text-violet-500" fill="none" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"/>
+              <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" class="opacity-75"/>
+            </svg>
+            <svg v-else-if="item.status==='done'" class="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+            </svg>
+            <svg v-else-if="item.status==='failed'" class="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+            <div v-else class="w-4 h-4 rounded-full border-2 border-slate-200"></div>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-mono text-slate-400 shrink-0">{{ item.voc_number }}</span>
+              <span class="text-sm text-slate-700 truncate">{{ item.title }}</span>
+            </div>
+            <p v-if="item.error" class="text-xs text-red-500 mt-0.5 truncate" :title="item.error">{{ item.error }}</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex gap-2 px-5 py-4 border-t border-slate-100 shrink-0">
+        <button v-if="!batchModalRunning && batchModalItems.some(i=>i.status!=='pending')"
+          @click="resetBatchModal" class="btn btn-secondary text-xs px-3">
+          초기화
+        </button>
+        <button @click="runBatchModal"
+          :disabled="batchModalRunning || batchModalItems.length===0 || !batchModalItems.some(i=>i.status==='pending')"
+          :class="['btn flex-1 text-sm', batchModalRunning?'btn-secondary':'bg-violet-600 text-white hover:bg-violet-700', 'disabled:opacity-40']">
+          <svg v-if="batchModalRunning" class="animate-spin w-4 h-4 mr-1.5 inline" fill="none" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"/>
+            <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" class="opacity-75"/>
+          </svg>
+          {{ batchModalRunning ? 'Sync 중...' : 'Sync 시작' }}
+        </button>
+        <button @click="closeBatchModal" :disabled="batchModalRunning" class="btn btn-secondary text-xs px-4 disabled:opacity-40">
+          닫기
+        </button>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /app -->
 
 <script src="/eel.js"></script>

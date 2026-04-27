@@ -134,7 +134,45 @@ def init_db():
                 sort_order INTEGER DEFAULT 0,
                 created_at TEXT DEFAULT (datetime('now', 'localtime'))
             );
+
+            CREATE TABLE IF NOT EXISTS process_types (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT NOT NULL UNIQUE,
+                sort_order INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now', 'localtime'))
+            );
+
+            CREATE TABLE IF NOT EXISTS type_groups (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                code       TEXT NOT NULL UNIQUE,
+                label      TEXT NOT NULL,
+                sort_order INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now', 'localtime'))
+            );
+
+            CREATE TABLE IF NOT EXISTS type_items (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_code TEXT NOT NULL,
+                name       TEXT NOT NULL,
+                value      TEXT DEFAULT '',
+                sort_order INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                UNIQUE(group_code, name)
+            );
         ''')
+        # Seed default type groups
+        for code, label, order in [('category','카테고리',1),('process_type','처리유형',2),('voc_status','VOC 상태',3)]:
+            try:
+                conn.execute('INSERT OR IGNORE INTO type_groups (code,label,sort_order) VALUES (?,?,?)',(code,label,order))
+            except Exception:
+                pass
+        # Seed voc_status items
+        for name, value, order in [('접수','open',1),('처리중','in_progress',2),('해결','resolved',3),('종료','closed',4)]:
+            try:
+                conn.execute('INSERT OR IGNORE INTO type_items (group_code,name,value,sort_order) VALUES (?,?,?,?)',('voc_status',name,value,order))
+            except Exception:
+                pass
+        conn.executescript('')  # flush
         # migration: add new columns to existing tables
         migrations = [
             ('vocs',               'voc_number',       'TEXT DEFAULT ""'),

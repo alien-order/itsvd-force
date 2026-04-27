@@ -1,6 +1,6 @@
 import eel
 from backend.db import init_db
-from backend import voc, assignment, scraper, config_manager, image_search, knowledge, board, category as category_mgr
+from backend import voc, assignment, scraper, config_manager, image_search, knowledge, board, category as category_mgr, type_manager
 
 eel.init('web')
 init_db()
@@ -46,6 +46,19 @@ def get_daily_report():
 @eel.expose
 def sync_voc_statuses():
     return voc.sync_statuses()
+
+@eel.expose
+def sync_single_voc(voc_id):
+    from backend.db import get_conn
+    with get_conn() as conn:
+        row = conn.execute('SELECT voc_number FROM vocs WHERE id=?', (voc_id,)).fetchone()
+    if not row:
+        return {'success': False, 'error': 'VOC를 찾을 수 없습니다.'}
+    voc_number = row['voc_number'] or str(voc_id)
+    result = scraper.fetch_voc(voc_number)
+    if not result['success']:
+        return result
+    return voc.update_from_sync(voc_id, result['data'])
 
 @eel.expose
 def get_voc_stats(period_type='monthly'):
@@ -218,7 +231,7 @@ def get_board_categories():
     return board.get_categories()
 
 
-# ── 유형 관리 ──────────────────────────────────────────────────────
+# ── 유형 관리 (카테고리 & 처리유형 공통) ──────────────────────────────
 @eel.expose
 def get_category_list():
     return category_mgr.get_categories()
@@ -234,6 +247,56 @@ def delete_category(cat_id):
 @eel.expose
 def update_category_order(order_list):
     return category_mgr.update_category_order(order_list)
+
+@eel.expose
+def get_process_type_list():
+    return category_mgr.get_items('process_types')
+
+@eel.expose
+def add_process_type(name):
+    return category_mgr.add_item('process_types', name)
+
+@eel.expose
+def delete_process_type(item_id):
+    return category_mgr.delete_item('process_types', item_id)
+
+@eel.expose
+def update_process_type_order(order_list):
+    return category_mgr.update_order('process_types', order_list)
+
+
+# ── 유형 시스템 (type_groups / type_items) ──────────────────────────
+@eel.expose
+def get_type_groups():
+    return type_manager.get_groups()
+
+@eel.expose
+def add_type_group(code, label):
+    return type_manager.add_group(code, label)
+
+@eel.expose
+def delete_type_group(group_id):
+    return type_manager.delete_group(group_id)
+
+@eel.expose
+def update_type_group_order(order_list):
+    return type_manager.update_group_order(order_list)
+
+@eel.expose
+def get_type_items(group_code):
+    return type_manager.get_items(group_code)
+
+@eel.expose
+def add_type_item(group_code, name, value=''):
+    return type_manager.add_item(group_code, name, value)
+
+@eel.expose
+def delete_type_item(item_id):
+    return type_manager.delete_item(item_id)
+
+@eel.expose
+def update_type_item_order(order_list):
+    return type_manager.update_item_order(order_list)
 
 
 if __name__ == '__main__':

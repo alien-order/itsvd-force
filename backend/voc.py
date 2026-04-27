@@ -119,7 +119,9 @@ def get_vocs(status=None, search=None, assignee_id=None, category=None, date_fro
 
 def get_categories():
     with get_conn() as conn:
-        rows = conn.execute('SELECT name FROM categories ORDER BY sort_order ASC, id ASC').fetchall()
+        rows = conn.execute(
+            "SELECT name FROM type_items WHERE group_code='category' ORDER BY sort_order ASC, id ASC"
+        ).fetchall()
     return [r['name'] for r in rows]
 
 
@@ -239,6 +241,24 @@ def sync_statuses():
                     (item['new'], item['id'])
                 )
     return result
+
+
+def update_from_sync(voc_id, data):
+    fields, params = [], []
+    for key in ('title', 'content', 'requester', 'due_date'):
+        val = (data.get(key) or '').strip()
+        if val:
+            fields.append(f'{key} = ?')
+            params.append(val)
+    if not fields:
+        return {'success': False, 'error': '업데이트할 데이터가 없습니다.'}
+    params.append(voc_id)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE vocs SET {', '.join(fields)}, updated_at=datetime('now','localtime') WHERE id=?",
+            params
+        )
+    return {'success': True}
 
 
 def get_daily_report():
