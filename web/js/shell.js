@@ -26,7 +26,12 @@ createApp({
       document.getElementById('content-frame').src = url;
     };
 
-    const applyZoom = (z) => { document.getElementById('app').style.zoom = z; };
+    const applyZoom = (z) => {
+      const app = document.getElementById('app');
+      app.style.zoom   = z;
+      app.style.height = (100 / z) + 'vh';
+      app.style.width  = (100 / z) + 'vw';
+    };
     const setZoom = (delta) => {
       const next = Math.round((uiZoom.value + delta) * 100) / 100;
       uiZoom.value = Math.min(1.3, Math.max(0.65, next));

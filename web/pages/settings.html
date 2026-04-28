@@ -430,36 +430,57 @@
     <div v-if="activeTab==='batch'">
       <div class="flex items-center gap-3 mb-4">
         <h2 class="text-base font-bold text-slate-800">VOC 배치처리</h2>
-        <span class="text-xs text-slate-400">엑셀/CSV의 VOC 번호를 API에서 일괄 조회하여 저장합니다</span>
+        <span class="text-xs text-slate-400">엑셀에서 VOC 번호 열을 복사해 붙여넣으세요</span>
       </div>
+
+      <!-- 붙여넣기 영역 -->
       <div class="card p-5 mb-4">
-        <h3 class="text-sm font-semibold text-slate-700 mb-1">파일 업로드</h3>
-        <p class="text-xs text-slate-400 mb-3">첫 번째 열에 VOC 번호가 있는 .xlsx / .xls / .csv 파일을 선택하세요.</p>
-        <div class="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center cursor-pointer hover:border-indigo-300 transition-colors"
-          @click="$refs.batchFileInput.click()"
-          @dragover.prevent
-          @drop.prevent="onBatchFileDrop($event)">
-          <input type="file" ref="batchFileInput" @change="onBatchFileChange" accept=".xlsx,.xls,.csv,.txt" class="hidden">
-          <div class="text-slate-400 text-sm mb-1">클릭하거나 파일을 드래그하세요</div>
-          <div class="text-xs text-slate-300">.xlsx .xls .csv .txt 지원</div>
+        <h3 class="text-sm font-semibold text-slate-700 mb-1">VOC 번호 붙여넣기</h3>
+        <p class="text-xs text-slate-400 mb-3">엑셀의 VOC 번호 열을 선택 후 복사(Ctrl+C)하여 아래에 붙여넣으세요. 첫 행이 헤더이면 자동으로 제외됩니다.</p>
+        <textarea v-model="batchPasteText" @input="parsePastedText"
+          placeholder="여기에 붙여넣기 (Ctrl+V)"
+          class="inp text-sm w-full" style="height:120px;resize:vertical;font-family:monospace"></textarea>
+        <div v-if="batchParsedNums.length" class="mt-2 text-xs text-slate-500">
+          총 <span class="font-semibold text-indigo-600">{{ batchParsedNums.length }}</span>개 감지됨
         </div>
-        <p v-if="batchError" class="mt-2 text-xs text-red-500">{{ batchError }}</p>
       </div>
+
+      <!-- 미리보기 + 시작 버튼 -->
+      <div v-if="batchParsedNums.length && !batchItems.length" class="card p-5 mb-4">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <span class="text-sm font-semibold text-slate-700">미리보기</span>
+            <span class="text-xs text-slate-400 ml-2">처음 10개</span>
+          </div>
+          <div class="flex gap-2">
+            <button @click="startBatch" :disabled="batchRunning" class="btn btn-primary text-xs px-4 disabled:opacity-40">
+              일괄 처리 시작
+            </button>
+            <button @click="resetBatch" class="btn btn-secondary text-xs px-3">초기화</button>
+          </div>
+        </div>
+        <div class="space-y-1">
+          <div v-for="num in batchParsedNums.slice(0,10)" :key="num"
+            class="px-3 py-1.5 rounded-lg bg-slate-50 text-xs font-mono text-slate-700">
+            {{ num }}
+          </div>
+          <div v-if="batchParsedNums.length > 10" class="text-xs text-slate-400 text-center py-1.5">
+            ... 외 {{ batchParsedNums.length - 10 }}개
+          </div>
+        </div>
+      </div>
+
+      <!-- 처리 결과 -->
       <div v-if="batchItems.length" class="card p-5">
         <div class="flex items-center justify-between mb-3">
           <div>
-            <span class="text-sm font-semibold text-slate-700">처리 목록</span>
+            <span class="text-sm font-semibold text-slate-700">처리 결과</span>
             <span class="text-xs text-slate-400 ml-2">{{ batchItems.length }}개</span>
             <span v-if="batchRunning||batchDone>0" class="text-xs text-slate-500 ml-2">
               ({{ batchDone }} / {{ batchItems.length }} 완료)
             </span>
           </div>
-          <div class="flex gap-2">
-            <button @click="startBatch" :disabled="batchRunning" class="btn btn-primary text-xs px-4 disabled:opacity-40">
-              {{ batchRunning ? '처리 중...' : '일괄 처리 시작' }}
-            </button>
-            <button @click="resetBatch" :disabled="batchRunning" class="btn btn-secondary text-xs px-3 disabled:opacity-40">초기화</button>
-          </div>
+          <button @click="resetBatch" :disabled="batchRunning" class="btn btn-secondary text-xs px-3 disabled:opacity-40">초기화</button>
         </div>
         <div class="space-y-1 max-h-96 overflow-y-auto">
           <div v-for="item in batchItems" :key="item.num" class="flex items-center gap-3 px-3 py-2 rounded-lg bg-slate-50">
@@ -773,36 +794,29 @@ createApp({
     };
 
     // ── VOC 배치처리 ─────────────────────────────────────────
-    const batchItems   = ref([]);
-    const batchRunning = ref(false);
-    const batchError   = ref('');
-    const batchDone    = ref(0);
+    const batchPasteText  = ref('');
+    const batchParsedNums = ref([]);
+    const batchItems      = ref([]);
+    const batchRunning    = ref(false);
+    const batchDone       = ref(0);
 
-    const processBatchFile = async (file) => {
-      batchError.value = '';
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
-        const bytes = new Uint8Array(ev.target.result);
-        let b64 = '';
-        const chunk = 8192;
-        for (let i = 0; i < bytes.length; i += chunk)
-          b64 += String.fromCharCode(...bytes.subarray(i, i + chunk));
-        const result = await eel.parse_voc_numbers_from_excel(file.name, btoa(b64))();
-        if (!result.success) { batchError.value = result.error || '파싱 실패'; return; }
-        batchItems.value  = result.voc_numbers.map(num => ({num, status:'pending', action:'', error:''}));
-        batchDone.value   = 0;
-      };
-      reader.readAsArrayBuffer(file);
+    const parsePastedText = () => {
+      const lines = batchPasteText.value.split(/\r?\n/);
+      let nums = lines
+        .map(l => l.split('\t')[0].trim())
+        .filter(v => v.length > 0);
+      if (nums.length && !/\d/.test(nums[0])) nums = nums.slice(1);
+      batchParsedNums.value = nums;
+      batchItems.value = [];
+      batchDone.value  = 0;
     };
 
-    const onBatchFileChange = (e) => { const f = e.target.files[0]; if (f) processBatchFile(f); };
-    const onBatchFileDrop   = (e) => { const f = e.dataTransfer.files[0]; if (f) processBatchFile(f); };
-
     const startBatch = async () => {
-      if (batchRunning.value) return;
-      batchRunning.value = true; batchDone.value = 0;
+      if (batchRunning.value || !batchParsedNums.value.length) return;
+      batchItems.value   = batchParsedNums.value.map(num => ({ num, status:'pending', action:'', error:'' }));
+      batchRunning.value = true;
+      batchDone.value    = 0;
       for (let i = 0; i < batchItems.value.length; i++) {
-        if (batchItems.value[i].status === 'done') { batchDone.value++; continue; }
         batchItems.value[i] = {...batchItems.value[i], status:'processing'};
         const r = await eel.batch_upsert_voc(batchItems.value[i].num)();
         batchDone.value++;
@@ -816,8 +830,10 @@ createApp({
     };
 
     const resetBatch = () => {
-      batchItems.value = batchItems.value.map(i => ({...i, status:'pending', action:'', error:''}));
-      batchDone.value = 0;
+      batchPasteText.value  = '';
+      batchParsedNums.value = [];
+      batchItems.value      = [];
+      batchDone.value       = 0;
     };
 
     // ── 탭 전환 ───────────────────────────────────────────────────
@@ -858,8 +874,8 @@ createApp({
       addMenu, startEditMenu, saveMenu, toggleMenu, deleteMenu,
       menuMoveUp, menuMoveDown, saveMenuOrder,
       // 배치처리
-      batchItems, batchRunning, batchError, batchDone,
-      onBatchFileChange, onBatchFileDrop, startBatch, resetBatch,
+      batchPasteText, batchParsedNums, batchItems, batchRunning, batchDone,
+      parsePastedText, startBatch, resetBatch,
       switchTab, todayStr,
     };
   }
