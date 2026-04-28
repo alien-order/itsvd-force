@@ -7,22 +7,21 @@ _DEFAULT_SELECTORS = {
     'voc_number': '', 'title': '', 'content': '',
     'requester': '', 'due_date': '', 'status': '', 'images': '',
 }
-_DEFAULT_FIELD_MAP = {
-    'voc_number': '', 'title': '', 'content': '',
-    'requester': '', 'due_date': '', 'status': '',
-}
 
 DEFAULT = {
-    'fetch_method': 'static',
-    'url_pattern': '',
-    'dynamic': False,
-    'selectors': dict(_DEFAULT_SELECTORS),
-    'xpath_wait_seconds': 3,
-    'xpath_selectors': dict(_DEFAULT_SELECTORS),
     'api_url_pattern': '',
-    'api_cookies': [],
-    'api_field_map': dict(_DEFAULT_FIELD_MAP),
+    'api_token': '',
+    'api_field_map': [],  # list of {col, path}
 }
+
+
+def _normalize_field_map(raw):
+    """Dict(구형) 또는 list(신형) 모두 list[{col,path}] 형태로 정규화."""
+    if isinstance(raw, list):
+        return [x for x in raw if x.get('col')]
+    if isinstance(raw, dict):
+        return [{'col': k, 'path': v} for k, v in raw.items() if v]
+    return []
 
 
 def get_config():
@@ -31,18 +30,23 @@ def get_config():
     with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
         data = json.load(f)
     config = dict(DEFAULT)
-    skip = {'selectors', 'xpath_selectors', 'api_field_map'}
-    config.update({k: v for k, v in data.items() if k not in skip})
-    config['selectors']       = {**_DEFAULT_SELECTORS, **data.get('selectors', {})}
-    config['xpath_selectors'] = {**_DEFAULT_SELECTORS, **data.get('xpath_selectors', {})}
-    config['api_field_map']   = {**_DEFAULT_FIELD_MAP, **data.get('api_field_map', {})}
-    # backward compat: dynamic=True without explicit fetch_method → xpath
-    if 'fetch_method' not in data and data.get('dynamic', False):
-        config['fetch_method'] = 'xpath'
+    config['api_url_pattern'] = data.get('api_url_pattern', '')
+    config['api_token']       = data.get('api_token', '')
+    config['api_field_map']   = _normalize_field_map(data.get('api_field_map', []))
     return config
 
 
 def save_config(data):
+    if 'api_field_map' in data:
+        data['api_field_map'] = _normalize_field_map(data['api_field_map'])
     with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     return {'success': True}
+
+
+def get_voc_columns():
+    from backend.db import get_conn
+    _EXCLUDE = {'id', 'created_at', 'updated_at', 'assignee_id'}
+    with get_conn() as conn:
+        rows = conn.execute('PRAGMA table_info(vocs)').fetchall()
+    return [r['name'] for r in rows if r['name'] not in _EXCLUDE]

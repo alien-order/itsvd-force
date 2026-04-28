@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>처리중인 VOC</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="../css/style.css">
+  <script type="text/javascript" src="/eel.js"></script>
+</head>
+<body style="margin:0;height:100%;overflow:hidden">
+<div id="app" style="display:flex;height:100%;overflow:hidden;background:#f8fafc">
+
+  <!-- ══ 미들 패널 ══ -->
+  <div class="middle-panel">
+    <div class="px-3 py-2.5 border-b border-slate-100">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="font-semibold text-slate-800 text-sm flex-1">처리중인 VOC</span>
+        <button @click="showFetchForm=!showFetchForm" class="btn btn-primary text-xs px-3 py-1.5">+ 새 VOC</button>
+      </div>
+      <div v-if="nextUp?.next_assignee" class="flex items-center gap-1.5 mb-2 text-xs">
+        <span class="text-slate-400">다음 순번</span>
+        <span class="font-semibold text-slate-700">{{ nextUp.next_assignee.name }}</span>
+        <span v-if="nextUp.next_assignee.hold_turns>0" class="bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">보류 {{ nextUp.next_assignee.hold_turns }}회</span>
+      </div>
+      <select v-model="filterAssigneeId" @change="loadVocs" class="inp text-xs py-1.5">
+        <option value="all">전체 담당자</option>
+        <option v-for="w in workload.filter(x=>x.active)" :key="w.id" :value="String(w.id)">
+          {{ w.name }}{{ w.is_absent?' (휴가)':' ('+( w.open_count+w.in_progress_count)+')' }}
+        </option>
+      </select>
+      <div class="flex gap-1.5 mt-1.5">
+        <select v-model="filterCategoryParent" @change="onCategoryParentChange" class="inp text-xs py-1.5 flex-1">
+          <option value="all">전체 업무유형</option>
+          <option v-for="c in parentCategoryList" :key="c.id" :value="c.name">{{ c.name }}</option>
+        </select>
+        <select v-model="filterCategoryChild" @change="loadVocs" class="inp text-xs py-1.5 flex-1">
+          <option value="all">전체 업무</option>
+          <option v-for="c in childCategoryList" :key="c.id" :value="c.name">{{ c.name }}</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- 새 VOC 접수 폼 -->
+    <div v-if="showFetchForm" class="border-b border-slate-100 bg-blue-50 px-4 py-3">
+      <div class="flex gap-2 mb-2">
+        <input v-model="vocNumInput" @keyup.enter="fetchVoc" type="text" placeholder="VOC 번호" class="inp text-xs py-1.5 flex-1" :disabled="vocFetching">
+        <button @click="fetchVoc" :disabled="vocFetching" class="btn btn-dark text-xs px-3 whitespace-nowrap">
+          <svg v-if="vocFetching" class="animate-spin w-3 h-3 inline mr-1" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"/><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" class="opacity-75"/></svg>
+          {{ vocFetching ? '로딩 중...' : '불러오기' }}
+        </button>
+      </div>
+      <div v-if="vocFetching" class="space-y-2 animate-pulse mt-1">
+        <div class="h-3 bg-slate-200 rounded w-2/3"></div>
+        <div class="h-3 bg-slate-200 rounded w-full"></div>
+        <div class="h-3 bg-slate-200 rounded w-5/6"></div>
+      </div>
+      <p v-if="fetchError" class="text-xs text-red-500 mb-2 whitespace-pre-line">{{ fetchError }}</p>
+      <div v-if="previewData" class="space-y-2">
+        <div class="px-2.5 py-2 bg-white rounded-lg border border-slate-200 text-xs text-slate-600 space-y-0.5">
+          <div class="font-mono text-slate-400">{{ previewData.voc_number }}</div>
+          <div class="font-medium text-slate-800 truncate">{{ previewData.title }}</div>
+        </div>
+        <select v-model="previewData.priority" class="inp text-xs py-1.5">
+          <option value="low">낮음</option><option value="normal">보통</option>
+          <option value="high">높음</option><option value="urgent">긴급</option>
+        </select>
+        <select v-model="forcedAssigneeId" class="inp text-xs py-1.5">
+          <option value="">자동 배정</option>
+          <option v-for="a in assignees.filter(x=>x.active)" :key="a.id" :value="String(a.id)">지정: {{ a.name }}</option>
+        </select>
+        <button @click="submitVoc" :disabled="submitting"
+          :class="['btn w-full text-xs', forcedAssigneeId?'btn-dark':'btn-primary']">
+          {{ submitting ? '접수 중...' : forcedAssigneeId ? '접수 (지정 배정)' : '자동 배정으로 접수' }}
+        </button>
+      </div>
+      <div v-if="lastCreated" class="mt-2 p-2 bg-green-100 rounded-lg text-xs text-green-800">
+        완료 → <strong>{{ lastCreated.assignee_name }}</strong>
+        <span v-if="lastAssignInfo" :class="['ml-1 px-1.5 py-0.5 rounded', assignTypeColor[lastAssignInfo.type]]">{{ assignTypeLabel[lastAssignInfo.type] }}</span>
+      </div>
+    </div>
+
+    <!-- VOC 목록 -->
+    <div class="flex-1 overflow-y-auto">
+      <div v-if="vocList.length===0" class="empty-state h-40">처리중인 VOC가 없습니다</div>
+      <div v-for="v in vocList" :key="v.id"
+        :class="['voc-item', selected?.id===v.id?'selected':'']" @click="openVoc(v)">
+        <div class="flex items-start gap-2">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-1.5 mb-0.5">
+              <span class="text-xs font-mono text-slate-400">{{ v.voc_number||('#'+v.id) }}</span>
+              <span v-if="v.priority&&v.priority!=='normal'" :class="['badge','priority-'+v.priority]">{{ priorityLabel[v.priority] }}</span>
+              <span :class="['badge','status-'+v.status]">{{ statusLabel[v.status] }}</span>
+            </div>
+            <div class="text-sm font-medium text-slate-800 truncate">{{ v.title }}</div>
+            <div class="flex items-center gap-2 mt-1">
+              <span v-if="v.assignee_name" class="flex items-center gap-1 text-xs text-slate-500">
+                <span class="avatar sm">{{ v.assignee_name.charAt(0) }}</span>{{ v.assignee_name }}
+              </span>
+              <span v-else class="text-xs text-red-400 font-medium">미배정</span>
+              <span v-if="v.due_date" :class="['text-xs ml-auto',ddayCls(v.due_date)]">{{ ddayLabel(v.due_date) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 하단 -->
+    <div class="border-t border-slate-100 px-4 py-3 space-y-2">
+      <button @click="openSyncModal" class="btn w-full text-xs bg-indigo-600 text-white hover:bg-indigo-700">
+        데이터 Sync <span v-if="vocList.length" class="ml-1 text-indigo-200">{{ vocList.length }}건</span>
+      </button>
+      <button @click="copyReport" :class="['btn w-full text-xs', reportCopied?'btn-secondary':'btn-dark']">
+        {{ reportCopied ? '복사됨 ✓' : '메신저 현황 복사' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- 리사이즈 핸들 -->
+  <div class="resize-handle" @mousedown.prevent="startResize"></div>
+
+  <!-- ══ 우측 패널 ══ -->
+  <div class="right-panel">
+    <!-- VOC 상세 -->
+    <template v-if="selected">
+      <div class="bg-white border-b border-slate-200 px-5 py-3">
+        <div class="flex items-center gap-2 mb-1 flex-wrap">
+          <span class="text-xs font-mono bg-slate-100 px-2 py-0.5 rounded text-slate-500">{{ selected.voc_number||('#'+selected.id) }}</span>
+          <span v-if="selected.priority&&selected.priority!=='normal'" :class="['badge','priority-'+selected.priority]">{{ priorityLabel[selected.priority] }}</span>
+          <span :class="['badge','status-'+selected.status]">{{ statusLabel[selected.status] }}</span>
+          <span v-if="selected.category" class="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded">{{ selected.category }}</span>
+          <span v-if="selected.due_date" :class="['text-xs font-semibold',ddayCls(selected.due_date)]">{{ ddayLabel(selected.due_date) }} ({{ selected.due_date }})</span>
+        </div>
+        <h2 class="text-lg font-semibold text-slate-900 leading-tight">{{ selected.title }}</h2>
+        <p v-if="selected.requester" class="text-sm text-slate-400 mt-0.5">요청자: {{ selected.requester }}</p>
+      </div>
+      <div class="right-tab-bar bg-white">
+        <div @click="rightTab='detail'"  :class="['right-tab',rightTab==='detail'?'active':'']">내용</div>
+        <div @click="rightTab='answer'"  :class="['right-tab',rightTab==='answer'?'active':'']">답변<span v-if="vocNotes.length" class="ml-1 text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full">{{ vocNotes.length }}</span></div>
+        <div @click="rightTab='refTab'" :class="['right-tab',rightTab==='refTab'?'active':'']">레퍼런스<span v-if="vocLinks.length" class="ml-1 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">{{ vocLinks.length }}</span></div>
+        <div @click="rightTab='memo'"   :class="['right-tab',rightTab==='memo'?'active':'']">메모</div>
+        <div @click="rightTab='similar'" :class="['right-tab',rightTab==='similar'?'active':'']">유사 VOC<span v-if="similarVocs.length" class="ml-1 text-xs bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full">{{ similarVocs.length }}</span></div>
+      </div>
+      <div class="p-6">
+
+        <!-- 내용 탭 -->
+        <div v-if="rightTab==='detail'" class="space-y-5">
+          <div class="card p-5">
+            <p class="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{{ selected.content }}</p>
+            <div v-if="vocImages.length" class="flex gap-2 flex-wrap mt-4 pt-4 border-t border-slate-100">
+              <img v-for="(p,i) in vocImages" :key="i" :src="p" class="w-20 h-20 object-cover rounded-lg border border-slate-200 cursor-pointer" @click="window.open(p,'_blank')">
+            </div>
+          </div>
+        </div>
+
+        <!-- 답변 탭 -->
+        <div v-if="rightTab==='answer'">
+          <div v-if="!vocNotes.length" class="empty-state h-48">등록된 답변/메모가 없습니다</div>
+          <div v-else class="space-y-3">
+            <div v-for="n in [...vocNotes].reverse()" :key="n.id" class="card p-4">
+              <div class="flex items-center gap-2 mb-2 text-xs text-slate-500">
+                <span class="font-medium">{{ n.note_date||n.created_at?.slice(0,10) }}</span>
+                <span v-if="n.work_minutes" class="bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded">{{ n.work_minutes }}분</span>
+              </div>
+              <div v-html="renderContent(n.content)" class="text-sm text-slate-700 leading-relaxed prose-content"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 레퍼런스 탭 -->
+        <div v-if="rightTab==='refTab'" class="space-y-5">
+          <div class="card p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">연결된 레퍼런스 <span class="text-slate-400 font-normal">({{ vocLinks.length }})</span></h3>
+            <div v-if="!vocLinks.length" class="text-xs text-slate-400 py-2">연결된 레퍼런스가 없습니다</div>
+            <div v-else class="space-y-2 mb-2">
+              <div v-for="k in vocLinks" :key="k.id" class="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg">
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium text-slate-800 truncate">{{ k.title }}</div>
+                  <div class="flex items-center gap-1.5 mt-0.5">
+                    <span v-if="k.category" class="text-xs text-blue-600">{{ k.category }}</span>
+                  </div>
+                </div>
+                <button @click="unlinkKnowledge(k.id)" class="text-slate-300 hover:text-red-500 text-sm shrink-0">×</button>
+              </div>
+            </div>
+          </div>
+          <div class="card p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">레퍼런스 검색</h3>
+            <input v-model="kLinkSearch" @input="onKLinkSearch" type="text" placeholder="검색..." class="inp text-sm mb-3">
+            <div v-if="kLinkResults.length" class="space-y-1.5 mb-3 max-h-48 overflow-y-auto">
+              <div v-for="k in kLinkResults" :key="k.id" class="flex items-center gap-2 px-3 py-2 border border-slate-100 rounded-lg hover:border-blue-200">
+                <div class="flex-1 min-w-0"><div class="text-sm text-slate-800 truncate">{{ k.title }}</div></div>
+                <button @click="linkKnowledge(k.id)" :disabled="vocLinks.some(l=>l.id===k.id)"
+                  :class="['btn text-xs px-2 py-1', vocLinks.some(l=>l.id===k.id)?'btn-secondary opacity-50':'btn-primary']">
+                  {{ vocLinks.some(l=>l.id===k.id) ? '연결됨' : '연결' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 메모 탭 -->
+        <div v-if="rightTab==='memo'" class="space-y-5">
+          <div class="card p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">메모 추가</h3>
+            <div class="flex gap-2 mb-2">
+              <input v-model="memoDate" type="date" class="inp text-sm flex-1">
+              <div class="relative w-24 shrink-0">
+                <input v-model="memoMinutes" type="number" min="0" placeholder="0" class="inp text-sm pr-8">
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">분</span>
+              </div>
+            </div>
+            <textarea v-model="memoText" rows="3" placeholder="메모 내용..." class="inp text-sm mb-2"></textarea>
+            <button @click="addNote" :disabled="!memoText.trim()" class="btn btn-primary text-sm w-full disabled:opacity-40">추가</button>
+          </div>
+          <div v-if="vocNotes.length" class="space-y-3">
+            <div v-for="n in [...vocNotes].reverse()" :key="n.id" class="card p-4">
+              <div class="flex items-center gap-2 mb-2 text-xs text-slate-500">
+                <span class="font-medium">{{ n.note_date||n.created_at?.slice(0,10) }}</span>
+                <span v-if="n.work_minutes" class="bg-slate-100 px-1.5 py-0.5 rounded">{{ n.work_minutes }}분</span>
+              </div>
+              <div v-html="renderContent(n.content)" class="text-sm text-slate-700 leading-relaxed prose-content"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 유사 VOC 탭 -->
+        <div v-if="rightTab==='similar'">
+          <div v-if="!similarVocs.length" class="empty-state h-48">유사한 과거 VOC가 없습니다</div>
+          <div v-else class="space-y-3">
+            <div v-for="v in similarVocs" :key="v.id" @click="openVoc(v)" class="card p-4 cursor-pointer hover:border-blue-200 transition-all">
+              <div class="flex items-start justify-between gap-2 mb-1">
+                <span class="text-sm font-medium text-slate-800 leading-tight flex-1">{{ v.title }}</span>
+                <span :class="['badge','status-'+v.status,'shrink-0']">{{ statusLabel[v.status] }}</span>
+              </div>
+              <p class="text-xs text-slate-500 line-clamp-2 mb-2">{{ v.content }}</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </template>
+    <div v-else class="empty-state h-full flex-col gap-3 text-slate-400">
+      <svg width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="text-slate-200"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+      <span>목록에서 VOC를 선택하세요</span>
+    </div>
+  </div>
+
+  <!-- Sync 모달 -->
+  <div v-if="syncModalOpen" class="fixed inset-0 z-50 flex items-center justify-center" style="background:rgba(0,0,0,.45)" @click.self="closeSyncModal">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 flex flex-col" style="max-height:80vh">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+        <div class="flex items-center gap-3">
+          <span class="text-sm font-semibold text-slate-800">처리중 VOC 데이터 Sync</span>
+          <span v-if="syncRunning||syncItems.some(i=>i.status!=='pending')" class="text-xs font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">{{ syncCurrent }} / {{ syncItems.length }}</span>
+        </div>
+        <button @click="closeSyncModal" :disabled="syncRunning" class="text-slate-400 hover:text-slate-600 text-xl leading-none disabled:opacity-30 w-6 h-6 flex items-center justify-center">×</button>
+      </div>
+      <div class="overflow-y-auto flex-1 px-5 py-2">
+        <div v-if="!syncItems.length" class="text-sm text-slate-400 text-center py-8">처리중인 VOC가 없습니다</div>
+        <div v-for="item in syncItems" :key="item.id" class="flex items-center gap-3 py-2.5 border-b border-slate-50 last:border-0">
+          <div class="shrink-0 w-5 h-5 flex items-center justify-center">
+            <svg v-if="item.status==='syncing'" class="animate-spin w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"/><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" class="opacity-75"/></svg>
+            <svg v-else-if="item.status==='done'" class="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+            <svg v-else-if="item.status==='failed'" class="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            <div v-else class="w-4 h-4 rounded-full border-2 border-slate-200"></div>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-mono text-slate-400 shrink-0">{{ item.voc_number }}</span>
+              <span class="text-sm text-slate-700 truncate">{{ item.title }}</span>
+            </div>
+            <p v-if="item.error" class="text-xs text-red-500 mt-0.5 truncate">{{ item.error }}</p>
+          </div>
+        </div>
+      </div>
+      <div class="flex gap-2 px-5 py-4 border-t border-slate-100 shrink-0">
+        <button v-if="!syncRunning&&syncItems.some(i=>i.status!=='pending')" @click="resetSync" class="btn btn-secondary text-xs px-3">초기화</button>
+        <button @click="runSync" :disabled="syncRunning||!syncItems.length||!syncItems.some(i=>i.status==='pending')"
+          :class="['btn flex-1 text-sm', syncRunning?'btn-secondary':'bg-indigo-600 text-white hover:bg-indigo-700','disabled:opacity-40']">
+          <svg v-if="syncRunning" class="animate-spin w-4 h-4 mr-1.5 inline" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"/><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" class="opacity-75"/></svg>
+          {{ syncRunning ? 'Sync 중...' : 'Sync 시작' }}
+        </button>
+        <button @click="closeSyncModal" :disabled="syncRunning" class="btn btn-secondary text-xs px-4 disabled:opacity-40">닫기</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="../js/common.js"></script>
+<script>
+const { createApp, ref, reactive, computed, onMounted } = Vue;
+createApp({
+  setup() {
+    const { mpWidth, applyWidth, startResize } = useMpResize();
+
+    // 유형 시스템
+    const typeItems = ref({});
+    const statusLabel        = computed(() => buildStatusLabel(typeItems.value['voc_status']||[]));
+    const statusList         = computed(() => buildStatusList(typeItems.value['voc_status']||[]));
+    const parentCategoryList = computed(() => (typeItems.value['category']||[]).filter(x=>!x.parent_id));
+    const childCategoryList  = computed(() => {
+      if (filterCategoryParent.value === 'all') return [];
+      const parent = (typeItems.value['category']||[]).find(x=>!x.parent_id && x.name===filterCategoryParent.value);
+      if (!parent) return [];
+      return (typeItems.value['category']||[]).filter(x=>x.parent_id===parent.id);
+    });
+
+    // 공통 데이터
+    const assignees = ref([]);
+    const workload  = ref([]);
+    const nextUp    = ref(null);
+
+    // VOC 목록
+    const vocList              = ref([]);
+    const filterAssigneeId     = ref('all');
+    const filterCategoryParent = ref('all');
+    const filterCategoryChild  = ref('all');
+
+    const onCategoryParentChange = () => {
+      filterCategoryChild.value = 'all';
+      loadVocs();
+    };
+
+    // 새 VOC 접수
+    const showFetchForm    = ref(false);
+    const vocNumInput      = ref('');
+    const vocFetching      = ref(false);
+    const fetchError       = ref('');
+    const previewData      = ref(null);
+    const submitting       = ref(false);
+    const lastCreated      = ref(null);
+    const lastAssignInfo   = ref(null);
+    const forcedAssigneeId = ref('');
+    const reportCopied     = ref(false);
+
+    // VOC 상세
+    const selected   = ref(null);
+    const rightTab   = ref('detail');
+    const vocHistory = ref([]);
+    const vocNotes   = ref([]);
+    const vocImages  = ref([]);
+    const vocLinks   = ref([]);
+    const reassignId = ref('');
+    const textSimilar = ref([]);
+    const similarVocs = computed(() => textSimilar.value.filter(v=>v.id!==selected.value?.id));
+    const memoDate    = ref(todayStr());
+    const memoMinutes = ref('');
+    const memoText    = ref('');
+    const kLinkSearch = ref('');
+    const kLinkResults = ref([]);
+    let kTimer = null;
+
+    // Sync 모달
+    const syncModalOpen = ref(false);
+    const syncItems     = ref([]);
+    const syncCurrent   = ref(0);
+    const syncRunning   = ref(false);
+
+    const loadTypeSystem = async () => {
+      const { map } = await loadTypeSystem_();
+      typeItems.value = map;
+    };
+    async function loadTypeSystem_() {
+      const groups = await eel.get_type_groups()();
+      const pairs  = await Promise.all(groups.map(g=>eel.get_type_items(g.code)().then(items=>[g.code,items])));
+      const map={};
+      for(const[c,i] of pairs) map[c]=i;
+      return {map};
+    }
+
+    const loadVocs = async () => {
+      vocList.value = await eel.get_vocs(
+        'active', null, filterAssigneeId.value,
+        filterCategoryChild.value === 'all' ? null : filterCategoryChild.value,
+        null, null,
+        filterCategoryParent.value === 'all' ? null : filterCategoryParent.value
+      )();
+    };
+    const loadWorkload = async () => {
+      workload.value = await eel.get_workload()();
+      workload.value && notifySidebar();
+    };
+
+    const openVoc = async (v) => {
+      selected.value   = {...v};
+      reassignId.value = v.assignee_id ? String(v.assignee_id) : '';
+      rightTab.value   = 'detail';
+      memoDate.value   = todayStr(); memoMinutes.value=''; memoText.value='';
+      kLinkSearch.value=''; kLinkResults.value=[];
+      const [hist, notes, imgs, links] = await Promise.all([
+        eel.get_assignment_history(v.id)(),
+        eel.get_voc_notes(v.id)(),
+        eel.get_voc_images(v.id)(),
+        eel.get_voc_knowledge(v.id)(),
+      ]);
+      vocHistory.value=hist; vocNotes.value=notes; vocImages.value=imgs; vocLinks.value=links;
+      textSimilar.value = await eel.get_similar_vocs(v.title, v.content, 5)();
+    };
+
+    const updateStatus = async (status) => {
+      if (!selected.value) return;
+      await eel.update_voc_status(selected.value.id, status)();
+      selected.value.status = status;
+      await loadVocs(); await loadWorkload();
+    };
+
+    const doReassign = async () => {
+      if (!reassignId.value || !selected.value) return;
+      const aid = parseInt(reassignId.value);
+      const result = await eel.reassign_voc(selected.value.id, aid, '', false)();
+      if (result.success) {
+        const a = assignees.value.find(x=>x.id===aid);
+        if (a) { selected.value.assignee_name=a.name; selected.value.assignee_id=a.id; }
+        vocHistory.value = await eel.get_assignment_history(selected.value.id)();
+        await loadWorkload();
+      }
+    };
+
+    const autoAssignVoc = async () => {
+      if (!selected.value) return;
+      const result = await eel.auto_assign_voc(selected.value.id)();
+      if (result?.success) {
+        const a = assignees.value.find(x=>x.id===result.assign_info.assignee_id);
+        if (a) { selected.value.assignee_name=a.name; selected.value.assignee_id=a.id; }
+        vocHistory.value = await eel.get_assignment_history(selected.value.id)();
+        await loadWorkload(); nextUp.value = await eel.get_next_up()();
+        await loadVocs();
+      } else alert(result?.error||'배정 실패');
+    };
+
+    const addNote = async () => {
+      if (!memoText.value.trim()||!selected.value) return;
+      await eel.add_voc_note(selected.value.id, memoText.value, memoDate.value, parseInt(memoMinutes.value)||0)();
+      memoText.value=''; memoMinutes.value=''; memoDate.value=todayStr();
+      vocNotes.value = await eel.get_voc_notes(selected.value.id)();
+    };
+
+    const onKLinkSearch = () => {
+      clearTimeout(kTimer);
+      kTimer = setTimeout(async()=>{
+        if(!kLinkSearch.value.trim()){kLinkResults.value=[];return;}
+        kLinkResults.value = await eel.get_knowledge(kLinkSearch.value,'all')();
+      }, 300);
+    };
+    const linkKnowledge = async(kid)=>{
+      if(!selected.value) return;
+      await eel.link_knowledge_to_voc(kid, selected.value.id)();
+      vocLinks.value = await eel.get_voc_knowledge(selected.value.id)();
+    };
+    const unlinkKnowledge = async(kid)=>{
+      if(!selected.value) return;
+      await eel.unlink_knowledge_from_voc(kid, selected.value.id)();
+      vocLinks.value = await eel.get_voc_knowledge(selected.value.id)();
+    };
+
+    const fetchVoc = async () => {
+      if (!vocNumInput.value.trim()) return;
+      vocFetching.value=true; fetchError.value=''; previewData.value=null;
+      const result = await eel.fetch_voc_data(vocNumInput.value.trim())();
+      vocFetching.value=false;
+      if (result.success) previewData.value = {...result.data, priority:'normal'};
+      else fetchError.value = result.error;
+    };
+
+    const submitVoc = async () => {
+      if (!previewData.value?.title?.trim()) return;
+      submitting.value=true;
+      const payload = {...previewData.value, images: previewData.value.images||[]};
+      if (forcedAssigneeId.value) payload.forced_assignee_id = parseInt(forcedAssigneeId.value);
+      const result = await eel.create_voc(payload)();
+      submitting.value=false;
+      if (result.success) {
+        lastCreated.value=result.voc; lastAssignInfo.value=result.assign_info;
+        showFetchForm.value=false; previewData.value=null; vocNumInput.value=''; forcedAssigneeId.value='';
+        await loadVocs(); await loadWorkload(); nextUp.value=await eel.get_next_up()();
+        const found = vocList.value.find(v=>v.id===result.voc.id);
+        if (found) openVoc(found);
+      } else alert(result.error);
+    };
+
+    const copyReport = async () => {
+      const text = await eel.get_daily_report()();
+      await navigator.clipboard.writeText(text);
+      reportCopied.value=true; setTimeout(()=>reportCopied.value=false,2000);
+    };
+
+    const openSyncModal = () => {
+      syncItems.value = vocList.value.map(v=>({id:v.id,voc_number:v.voc_number||('#'+v.id),title:v.title,status:'pending',error:''}));
+      syncCurrent.value=0; syncRunning.value=false; syncModalOpen.value=true;
+    };
+    const runSync = async () => {
+      if (syncRunning.value) return;
+      syncRunning.value=true; syncCurrent.value=0; let done=0;
+      for (let i=0; i<syncItems.value.length; i++) {
+        if (syncItems.value[i].status!=='pending') continue;
+        syncItems.value[i]={...syncItems.value[i],status:'syncing'};
+        const r = await eel.sync_single_voc(syncItems.value[i].id)();
+        done++; syncCurrent.value=done;
+        syncItems.value[i]={...syncItems.value[i],status:r.success?'done':'failed',error:r.error||''};
+      }
+      syncRunning.value=false; await loadVocs(); await loadWorkload();
+    };
+    const resetSync   = () => { syncItems.value=syncItems.value.map(i=>({...i,status:'pending',error:''})); syncCurrent.value=0; };
+    const closeSyncModal = () => { if(!syncRunning.value) syncModalOpen.value=false; };
+
+    onMounted(async()=>{
+      applyWidth(mpWidth.value);
+      const [{map}, as, wl, nu] = await Promise.all([
+        loadTypeSystem_(), eel.get_assignees()(), eel.get_workload()(), eel.get_next_up()(),
+      ]);
+      typeItems.value=map; assignees.value=as; workload.value=wl; nextUp.value=nu;
+      await loadVocs();
+    });
+
+    return {
+      startResize, priorityLabel:PRIORITY_LABEL, assignTypeLabel:ASSIGN_TYPE_LABEL, assignTypeColor:ASSIGN_TYPE_COLOR,
+      statusLabel, statusList, parentCategoryList, childCategoryList,
+      assignees, workload, nextUp, vocList, filterAssigneeId, filterCategoryParent, filterCategoryChild,
+      onCategoryParentChange,
+      showFetchForm, vocNumInput, vocFetching, fetchError, previewData, submitting, lastCreated, lastAssignInfo, forcedAssigneeId, reportCopied,
+      selected, rightTab, vocHistory, vocNotes, vocImages, vocLinks, reassignId, similarVocs,
+      memoDate, memoMinutes, memoText, kLinkSearch, kLinkResults,
+      syncModalOpen, syncItems, syncCurrent, syncRunning,
+      loadVocs, openVoc, updateStatus, doReassign, autoAssignVoc, addNote,
+      onKLinkSearch, linkKnowledge, unlinkKnowledge,
+      fetchVoc, submitVoc, copyReport,
+      openSyncModal, runSync, resetSync, closeSyncModal,
+      renderContent, ddayLabel, ddayCls, todayStr,
+    };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>

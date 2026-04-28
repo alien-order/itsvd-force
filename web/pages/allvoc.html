@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>전체 VOC</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="../css/style.css">
+  <script type="text/javascript" src="/eel.js"></script>
+</head>
+<body style="margin:0;height:100%;overflow:hidden">
+<div id="app" style="display:flex;height:100%;overflow:hidden;background:#f8fafc">
+
+  <!-- ══ 미들 패널 ══ -->
+  <div class="middle-panel">
+    <div class="mp-header">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="mp-title">전체 VOC</span>
+        <span class="mp-count">{{ vocList.length }}건</span>
+      </div>
+      <!-- 필터 -->
+      <div class="space-y-1.5">
+        <input v-model="filterSearch" @input="debouncedLoad" type="text" placeholder="제목, 내용, 번호 검색" class="inp text-xs py-1.5">
+        <div class="flex gap-1.5">
+          <select v-model="filterStatus" @change="loadVocs" class="inp text-xs py-1.5 flex-1">
+            <option value="all">전체 상태</option>
+            <option v-for="s in statusList" :key="s" :value="s">{{ statusLabel[s] }}</option>
+          </select>
+          <select v-model="filterAssigneeId" @change="loadVocs" class="inp text-xs py-1.5 flex-1">
+            <option value="all">전체 담당자</option>
+            <option value="unassigned">미배정</option>
+            <option v-for="a in assignees.filter(x=>x.active)" :key="a.id" :value="String(a.id)">{{ a.name }}</option>
+          </select>
+        </div>
+        <div class="flex gap-1.5">
+          <select v-model="filterCategoryParent" @change="onCategoryParentChange" class="inp text-xs py-1.5 flex-1">
+            <option value="all">전체 업무유형</option>
+            <option v-for="c in parentCategoryList" :key="c.id" :value="c.name">{{ c.name }}</option>
+          </select>
+          <select v-model="filterCategoryChild" @change="loadVocs" class="inp text-xs py-1.5 flex-1"
+            :class="childCategoryList.length===0&&filterCategoryParent!=='all'?'opacity-50':''">
+            <option value="all">전체 업무</option>
+            <option v-for="c in childCategoryList" :key="c.id" :value="c.name">{{ c.name }}</option>
+          </select>
+        </div>
+        <div class="flex gap-1.5">
+          <select v-model="filterProcessType" @change="loadVocs" class="inp text-xs py-1.5 flex-1">
+            <option value="all">전체 처리유형</option>
+            <option v-for="p in processTypeList" :key="p.id" :value="p.value||p.name">{{ p.name }}</option>
+          </select>
+          <select v-model="filterYear" @change="onYearChange" class="inp text-xs py-1.5" style="width:80px;flex-shrink:0">
+            <option value="">전체</option>
+            <option v-for="y in years" :key="y" :value="y">{{ y }}</option>
+          </select>
+        </div>
+        <div class="flex gap-1.5">
+          <input v-model="filterDateFrom" @change="loadVocs" type="date" class="inp text-xs py-1.5 flex-1">
+          <span class="self-center text-xs text-slate-300 shrink-0">~</span>
+          <input v-model="filterDateTo" @change="loadVocs" type="date" class="inp text-xs py-1.5 flex-1">
+        </div>
+      </div>
+    </div>
+
+    <!-- VOC 목록 -->
+    <div class="flex-1 overflow-y-auto">
+      <div v-if="vocList.length===0" class="empty-state h-40">해당 조건의 VOC가 없습니다</div>
+      <div v-for="v in vocList" :key="v.id"
+        :class="['voc-item', selected?.id===v.id?'selected':'']" @click="openVoc(v)">
+        <div class="flex items-start gap-2">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-1.5 mb-0.5 flex-wrap">
+              <span class="text-xs font-mono text-slate-400">{{ v.voc_number||('#'+v.id) }}</span>
+              <span v-if="v.priority&&v.priority!=='normal'" :class="['badge','priority-'+v.priority]">{{ priorityLabel[v.priority] }}</span>
+              <span :class="['badge','status-'+v.status]">{{ statusLabel[v.status] }}</span>
+              <span v-if="v.category" class="text-xs text-slate-400">{{ v.category }}</span>
+            </div>
+            <div class="text-sm font-medium text-slate-800 truncate">{{ v.title }}</div>
+            <div class="flex items-center gap-2 mt-1">
+              <span v-if="v.assignee_name" class="flex items-center gap-1 text-xs text-slate-500">
+                <span class="avatar sm">{{ v.assignee_name.charAt(0) }}</span>{{ v.assignee_name }}
+              </span>
+              <span v-else class="text-xs text-red-400 font-medium">미배정</span>
+              <span class="text-xs text-slate-300 ml-auto">{{ v.created_at?.slice(0,10) }}</span>
+              <span v-if="v.due_date" :class="['text-xs',ddayCls(v.due_date)]">{{ ddayLabel(v.due_date) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 리사이즈 핸들 -->
+  <div class="resize-handle" @mousedown.prevent="startResize"></div>
+
+  <!-- ══ 우측 패널 ══ -->
+  <div class="right-panel">
+    <template v-if="selected">
+      <div class="bg-white border-b border-slate-200 px-5 py-3">
+        <div class="flex items-center gap-2 mb-1 flex-wrap">
+          <span class="text-xs font-mono bg-slate-100 px-2 py-0.5 rounded text-slate-500">{{ selected.voc_number||('#'+selected.id) }}</span>
+          <span v-if="selected.priority&&selected.priority!=='normal'" :class="['badge','priority-'+selected.priority]">{{ priorityLabel[selected.priority] }}</span>
+          <span :class="['badge','status-'+selected.status]">{{ statusLabel[selected.status] }}</span>
+          <span v-if="selected.category" class="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded">{{ selected.category }}</span>
+          <span v-if="selected.due_date" :class="['text-xs font-semibold',ddayCls(selected.due_date)]">{{ ddayLabel(selected.due_date) }} ({{ selected.due_date }})</span>
+        </div>
+        <h2 class="text-lg font-semibold text-slate-900 leading-tight">{{ selected.title }}</h2>
+        <div class="flex gap-4 mt-0.5 text-xs text-slate-400">
+          <span v-if="selected.requester">요청자: {{ selected.requester }}</span>
+          <span>등록: {{ selected.created_at?.slice(0,10) }}</span>
+        </div>
+      </div>
+      <div class="right-tab-bar bg-white">
+        <div @click="rightTab='detail'"  :class="['right-tab',rightTab==='detail'?'active':'']">내용</div>
+        <div @click="rightTab='answer'"  :class="['right-tab',rightTab==='answer'?'active':'']">답변<span v-if="vocNotes.length" class="ml-1 text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full">{{ vocNotes.length }}</span></div>
+        <div @click="rightTab='refTab'" :class="['right-tab',rightTab==='refTab'?'active':'']">레퍼런스<span v-if="vocLinks.length" class="ml-1 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">{{ vocLinks.length }}</span></div>
+        <div @click="rightTab='memo'"   :class="['right-tab',rightTab==='memo'?'active':'']">메모</div>
+        <div @click="rightTab='similar'" :class="['right-tab',rightTab==='similar'?'active':'']">유사 VOC</div>
+      </div>
+      <div class="p-6">
+
+        <!-- 내용 탭 -->
+        <div v-if="rightTab==='detail'" class="space-y-5">
+          <div class="card p-5">
+            <p class="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{{ selected.content }}</p>
+            <div v-if="vocImages.length" class="flex gap-2 flex-wrap mt-4 pt-4 border-t border-slate-100">
+              <img v-for="(p,i) in vocImages" :key="i" :src="p" class="w-20 h-20 object-cover rounded-lg border border-slate-200 cursor-pointer" @click="window.open(p,'_blank')">
+            </div>
+          </div>
+        </div>
+
+        <!-- 답변 탭 -->
+        <div v-if="rightTab==='answer'">
+          <div v-if="!vocNotes.length" class="empty-state h-48">등록된 답변/메모가 없습니다</div>
+          <div v-else class="space-y-3">
+            <div v-for="n in [...vocNotes].reverse()" :key="n.id" class="card p-4">
+              <div class="flex items-center gap-2 mb-2 text-xs text-slate-500">
+                <span class="font-medium">{{ n.note_date||n.created_at?.slice(0,10) }}</span>
+                <span v-if="n.work_minutes" class="bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded">{{ n.work_minutes }}분</span>
+              </div>
+              <div v-html="renderContent(n.content)" class="text-sm text-slate-700 leading-relaxed prose-content"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 레퍼런스 탭 -->
+        <div v-if="rightTab==='refTab'" class="space-y-5">
+          <div class="card p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">연결된 레퍼런스 <span class="text-slate-400 font-normal">({{ vocLinks.length }})</span></h3>
+            <div v-if="!vocLinks.length" class="text-xs text-slate-400 py-2">연결된 레퍼런스가 없습니다</div>
+            <div v-else class="space-y-2 mb-2">
+              <div v-for="k in vocLinks" :key="k.id" class="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg">
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium text-slate-800 truncate">{{ k.title }}</div>
+                  <span v-if="k.category" class="text-xs text-blue-600">{{ k.category }}</span>
+                </div>
+                <button @click="unlinkKnowledge(k.id)" class="text-slate-300 hover:text-red-500 text-sm shrink-0">×</button>
+              </div>
+            </div>
+          </div>
+          <div class="card p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">레퍼런스 검색</h3>
+            <input v-model="kLinkSearch" @input="onKLinkSearch" type="text" placeholder="검색..." class="inp text-sm mb-3">
+            <div v-if="kLinkResults.length" class="space-y-1.5 max-h-48 overflow-y-auto">
+              <div v-for="k in kLinkResults" :key="k.id" class="flex items-center gap-2 px-3 py-2 border border-slate-100 rounded-lg hover:border-blue-200">
+                <div class="flex-1 min-w-0"><div class="text-sm text-slate-800 truncate">{{ k.title }}</div></div>
+                <button @click="linkKnowledge(k.id)" :disabled="vocLinks.some(l=>l.id===k.id)"
+                  :class="['btn text-xs px-2 py-1', vocLinks.some(l=>l.id===k.id)?'btn-secondary opacity-50':'btn-primary']">
+                  {{ vocLinks.some(l=>l.id===k.id) ? '연결됨' : '연결' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 메모 탭 -->
+        <div v-if="rightTab==='memo'" class="space-y-5">
+          <div class="card p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">메모 추가</h3>
+            <div class="flex gap-2 mb-2">
+              <input v-model="memoDate" type="date" class="inp text-sm flex-1">
+              <div class="relative w-24 shrink-0">
+                <input v-model="memoMinutes" type="number" min="0" placeholder="0" class="inp text-sm pr-8">
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">분</span>
+              </div>
+            </div>
+            <textarea v-model="memoText" rows="3" placeholder="메모 내용..." class="inp text-sm mb-2"></textarea>
+            <button @click="addNote" :disabled="!memoText.trim()" class="btn btn-primary text-sm w-full disabled:opacity-40">추가</button>
+          </div>
+          <div v-if="vocNotes.length" class="space-y-3">
+            <div v-for="n in [...vocNotes].reverse()" :key="n.id" class="card p-4">
+              <div class="flex items-center gap-2 mb-2 text-xs text-slate-500">
+                <span class="font-medium">{{ n.note_date||n.created_at?.slice(0,10) }}</span>
+                <span v-if="n.work_minutes" class="bg-slate-100 px-1.5 py-0.5 rounded">{{ n.work_minutes }}분</span>
+              </div>
+              <div v-html="renderContent(n.content)" class="text-sm text-slate-700 leading-relaxed prose-content"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 유사 VOC 탭 -->
+        <div v-if="rightTab==='similar'">
+          <div v-if="!similarVocs.length" class="empty-state h-48">유사한 VOC가 없습니다</div>
+          <div v-else class="space-y-3">
+            <div v-for="v in similarVocs" :key="v.id" @click="openVoc(v)" class="card p-4 cursor-pointer hover:border-blue-200 transition-all">
+              <div class="flex items-start justify-between gap-2 mb-1">
+                <span class="text-sm font-medium text-slate-800 leading-tight flex-1">{{ v.title }}</span>
+                <span :class="['badge','status-'+v.status,'shrink-0']">{{ statusLabel[v.status] }}</span>
+              </div>
+              <p class="text-xs text-slate-500 line-clamp-2">{{ v.content }}</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </template>
+    <div v-else class="empty-state h-full flex-col gap-3 text-slate-400">
+      <svg width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="text-slate-200"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+      <span>목록에서 VOC를 선택하세요</span>
+    </div>
+  </div>
+
+</div>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="../js/common.js"></script>
+<script>
+const { createApp, ref, computed, onMounted } = Vue;
+createApp({
+  setup() {
+    const { mpWidth, applyWidth, startResize } = useMpResize();
+
+    const typeItems = ref({});
+    const statusLabel        = computed(() => buildStatusLabel(typeItems.value['voc_status']||[]));
+    const statusList         = computed(() => buildStatusList(typeItems.value['voc_status']||[]));
+    const parentCategoryList = computed(() => (typeItems.value['category']||[]).filter(x=>!x.parent_id));
+    const processTypeList    = computed(() => typeItems.value['process_type']||[]);
+
+    const assignees = ref([]);
+    const years     = ref([]);
+
+    // 필터
+    const filterSearch          = ref('');
+    const filterStatus          = ref('all');
+    const filterAssigneeId      = ref('all');
+    const filterCategoryParent  = ref('all');
+    const filterCategoryChild   = ref('all');
+    const filterProcessType     = ref('all');
+    const filterDateFrom        = ref('');
+    const filterDateTo          = ref('');
+    const filterYear            = ref('');
+
+    const childCategoryList = computed(() => {
+      if (filterCategoryParent.value === 'all') return [];
+      const parent = (typeItems.value['category']||[]).find(x=>!x.parent_id && x.name===filterCategoryParent.value);
+      if (!parent) return [];
+      return (typeItems.value['category']||[]).filter(x=>x.parent_id===parent.id);
+    });
+
+    const newVocChildList = computed(() => {
+      if (!newVoc.value.categoryParent) return [];
+      const parent = (typeItems.value['category']||[]).find(x=>!x.parent_id && x.name===newVoc.value.categoryParent);
+      if (!parent) return [];
+      return (typeItems.value['category']||[]).filter(x=>x.parent_id===parent.id);
+    });
+
+    const onCategoryParentChange = () => {
+      filterCategoryChild.value = 'all';
+      loadVocs();
+    };
+
+    const vocList = ref([]);
+    let searchTimer = null;
+
+    const debouncedLoad = () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(loadVocs, 300);
+    };
+
+    const onYearChange = () => {
+      if (filterYear.value) {
+        filterDateFrom.value = filterYear.value + '-01-01';
+        filterDateTo.value   = filterYear.value + '-12-31';
+      } else {
+        filterDateFrom.value = '';
+        filterDateTo.value   = '';
+      }
+      loadVocs();
+    };
+
+    const loadVocs = async () => {
+      vocList.value = await eel.get_vocs(
+        filterStatus.value === 'all' ? null : filterStatus.value,
+        filterSearch.value || null,
+        filterAssigneeId.value,
+        filterCategoryChild.value === 'all' ? null : filterCategoryChild.value,
+        filterDateFrom.value || null,
+        filterDateTo.value || null,
+        filterCategoryParent.value === 'all' ? null : filterCategoryParent.value,
+        filterProcessType.value === 'all' ? null : filterProcessType.value
+      )();
+    };
+
+    // VOC 상세
+    const selected    = ref(null);
+    const rightTab    = ref('detail');
+    const vocNotes    = ref([]);
+    const vocImages   = ref([]);
+    const vocLinks    = ref([]);
+    const similarList = ref([]);
+    const similarVocs = computed(() => similarList.value.filter(v=>v.id!==selected.value?.id));
+    const memoDate    = ref(todayStr());
+    const memoMinutes = ref('');
+    const memoText    = ref('');
+    const kLinkSearch  = ref('');
+    const kLinkResults = ref([]);
+    let kTimer = null;
+
+    const openVoc = async (v) => {
+      selected.value = {...v};
+      rightTab.value = 'detail';
+      memoDate.value = todayStr(); memoMinutes.value=''; memoText.value='';
+      kLinkSearch.value=''; kLinkResults.value=[];
+      const [notes, imgs, links] = await Promise.all([
+        eel.get_voc_notes(v.id)(),
+        eel.get_voc_images(v.id)(),
+        eel.get_voc_knowledge(v.id)(),
+      ]);
+      vocNotes.value=notes; vocImages.value=imgs; vocLinks.value=links;
+      similarList.value = await eel.get_similar_vocs(v.title, v.content, 5)();
+    };
+
+    const addNote = async () => {
+      if (!memoText.value.trim()||!selected.value) return;
+      await eel.add_voc_note(selected.value.id, memoText.value, memoDate.value, parseInt(memoMinutes.value)||0)();
+      memoText.value=''; memoMinutes.value=''; memoDate.value=todayStr();
+      vocNotes.value = await eel.get_voc_notes(selected.value.id)();
+    };
+
+    const onKLinkSearch = () => {
+      clearTimeout(kTimer);
+      kTimer = setTimeout(async()=>{
+        if(!kLinkSearch.value.trim()){kLinkResults.value=[];return;}
+        kLinkResults.value = await eel.get_knowledge(kLinkSearch.value,'all')();
+      }, 300);
+    };
+    const linkKnowledge = async(kid)=>{
+      if(!selected.value) return;
+      await eel.link_knowledge_to_voc(kid, selected.value.id)();
+      vocLinks.value = await eel.get_voc_knowledge(selected.value.id)();
+    };
+    const unlinkKnowledge = async(kid)=>{
+      if(!selected.value) return;
+      await eel.unlink_knowledge_from_voc(kid, selected.value.id)();
+      vocLinks.value = await eel.get_voc_knowledge(selected.value.id)();
+    };
+
+    onMounted(async () => {
+      applyWidth(mpWidth.value);
+      // Read URL params (from stats page navigation)
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('status'))          filterStatus.value         = params.get('status');
+      if (params.get('assignee_id'))     filterAssigneeId.value     = params.get('assignee_id');
+      if (params.get('date_from'))       filterDateFrom.value       = params.get('date_from');
+      if (params.get('date_to'))         filterDateTo.value         = params.get('date_to');
+      if (params.get('category_parent')) filterCategoryParent.value = params.get('category_parent');
+      if (params.get('process_type'))    filterProcessType.value    = params.get('process_type');
+
+      async function loadTypeSystem_() {
+        const groups = await eel.get_type_groups()();
+        const pairs  = await Promise.all(groups.map(g=>eel.get_type_items(g.code)().then(items=>[g.code,items])));
+        const map={};
+        for(const[c,i] of pairs) map[c]=i;
+        return map;
+      }
+      const [map, as, yr] = await Promise.all([
+        loadTypeSystem_(), eel.get_assignees()(), eel.get_years()(),
+      ]);
+      typeItems.value=map; assignees.value=as; years.value=yr;
+      await loadVocs();
+    });
+
+    return {
+      startResize,
+      priorityLabel:PRIORITY_LABEL,
+      statusLabel, statusList, parentCategoryList, processTypeList, childCategoryList,
+      assignees, years,
+      filterSearch, filterStatus, filterAssigneeId, filterCategoryParent, filterCategoryChild, filterProcessType,
+      filterDateFrom, filterDateTo, filterYear,
+      vocList, loadVocs, debouncedLoad, onYearChange, onCategoryParentChange,
+      selected, rightTab, vocNotes, vocImages, vocLinks, similarVocs,
+      memoDate, memoMinutes, memoText, kLinkSearch, kLinkResults,
+      openVoc, addNote,
+      onKLinkSearch, linkKnowledge, unlinkKnowledge,
+      renderContent, ddayLabel, ddayCls, todayStr,
+    };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>

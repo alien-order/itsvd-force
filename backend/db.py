@@ -161,7 +161,7 @@ def init_db():
             );
         ''')
         # Seed default type groups
-        for code, label, order in [('category','카테고리',1),('process_type','처리유형',2),('voc_status','VOC 상태',3)]:
+        for code, label, order in [('category','업무유형',1),('process_type','처리유형',2),('voc_status','VOC 상태',3)]:
             try:
                 conn.execute('INSERT OR IGNORE INTO type_groups (code,label,sort_order) VALUES (?,?,?)',(code,label,order))
             except Exception:
@@ -173,6 +173,8 @@ def init_db():
             except Exception:
                 pass
         conn.executescript('')  # flush
+        # 기존 '카테고리' 레이블을 '업무유형'으로 마이그레이션
+        conn.execute("UPDATE type_groups SET label='업무유형' WHERE code='category' AND label='카테고리'")
         # migration: add new columns to existing tables
         migrations = [
             ('vocs',               'voc_number',       'TEXT DEFAULT ""'),
@@ -185,9 +187,56 @@ def init_db():
             ('voc_notes',          'note_date',        'TEXT DEFAULT ""'),
             ('voc_notes',          'work_minutes',     'INTEGER DEFAULT 0'),
             ('knowledge',          'process_type',     'TEXT DEFAULT ""'),
+            ('type_items',         'parent_id',        'INTEGER DEFAULT NULL'),
+            ('assignees',          'knox_id',          'TEXT DEFAULT NULL'),
+            ('assignees',          'ip_address',       'TEXT DEFAULT ""'),
+            ('vocs',               'process_type',     'TEXT DEFAULT ""'),
         ]
         for table, col, definition in migrations:
             try:
                 conn.execute(f'ALTER TABLE {table} ADD COLUMN {col} {definition}')
             except Exception:
                 pass
+        # custom_menus table
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS custom_menus (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                label        TEXT NOT NULL,
+                icon_color   TEXT DEFAULT '#6366f1',
+                source_type  TEXT DEFAULT 'url',
+                source_value TEXT DEFAULT '',
+                section      TEXT DEFAULT '',
+                sort_order   INTEGER DEFAULT 0,
+                active       INTEGER DEFAULT 1,
+                protected    INTEGER DEFAULT 0
+            )
+        ''')
+        # add columns to existing custom_menus if missing
+        for col, dflt in [('section', "TEXT DEFAULT ''"), ('protected', 'INTEGER DEFAULT 0')]:
+            try:
+                conn.execute(f'ALTER TABLE custom_menus ADD COLUMN {col} {dflt}')
+            except Exception:
+                pass
+        # Migrate old 'builtin' source_type → 'file' with .html extension
+        conn.execute(
+            "UPDATE custom_menus SET source_type='file', source_value=source_value||'.html' "
+            "WHERE source_type='builtin' AND source_value NOT LIKE '%.html'"
+        )
+        # Seed default page menus (once per page file)
+        _defaults = [
+            ('allvoc.html',    '전체 VOC',     '#6366f1', 'VOC',    1),
+            ('active.html',    '처리중인 VOC', '#6366f1', 'VOC',    2),
+            ('stats.html',     'VOC 통계',     '#6366f1', 'VOC',    3),
+            ('knowledge.html', '레퍼런스',     '#8b5cf6', '지식',   4),
+            ('board.html',     '공유문서',     '#8b5cf6', '지식',   5),
+            ('settings.html',  '설정',         '#64748b', '시스템', 6),
+        ]
+        for sval, label, color, section, order in _defaults:
+            exists = conn.execute(
+                "SELECT COUNT(*) FROM custom_menus WHERE source_type='file' AND source_value=?", (sval,)
+            ).fetchone()[0]
+            if not exists:
+                conn.execute(
+                    'INSERT INTO custom_menus (label,icon_color,source_type,source_value,section,sort_order,active) VALUES (?,?,?,?,?,?,1)',
+                    (label, color, 'file', sval, section, order)
+                )

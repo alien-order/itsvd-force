@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>레퍼런스</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="../css/style.css">
+  <script type="text/javascript" src="/eel.js"></script>
+  <link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor.min.css">
+</head>
+<body style="margin:0;height:100%;overflow:hidden">
+<div id="app" style="display:flex;height:100%;overflow:hidden;background:#f8fafc">
+
+  <!-- ══ 미들 패널 ══ -->
+  <div class="middle-panel">
+    <div class="mp-header">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="mp-title">레퍼런스</span>
+        <span class="mp-count">{{ list.length }}건</span>
+        <button @click="startNew" class="btn btn-primary text-xs px-3 py-1.5 ml-auto">+ 새 항목</button>
+      </div>
+      <input v-model="filterSearch" @input="debouncedLoad" type="text" placeholder="제목, 내용, 태그 검색" class="inp text-xs py-1.5 mb-1.5">
+      <div class="flex gap-1.5">
+        <select v-model="filterCategory" @change="loadList" class="inp text-xs py-1.5 flex-1">
+          <option value="all">전체 유형</option>
+          <option v-for="c in categoryList" :key="c.id" :value="c.name">{{ c.name }}</option>
+        </select>
+        <select v-model="filterProcessType" @change="loadList" class="inp text-xs py-1.5 flex-1">
+          <option value="all">전체 처리유형</option>
+          <option v-for="p in processTypeList" :key="p.id" :value="p.name">{{ p.name }}</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto">
+      <div v-if="!list.length" class="empty-state h-40">레퍼런스가 없습니다</div>
+      <div v-for="k in list" :key="k.id"
+        :class="['board-item', selected?.id===k.id?'selected':'']" @click="openItem(k)">
+        <div class="flex items-start gap-2">
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium text-slate-800 truncate">{{ k.title }}</div>
+            <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+              <span v-if="k.category" class="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full">{{ k.category }}</span>
+              <span v-if="k.process_type" class="text-xs bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded-full">{{ k.process_type }}</span>
+              <span v-if="k.tags" class="text-xs text-slate-400 truncate">{{ k.tags }}</span>
+            </div>
+            <div class="text-xs text-slate-300 mt-0.5">{{ k.updated_at?.slice(0,10) }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 리사이즈 핸들 -->
+  <div class="resize-handle" @mousedown.prevent="startResize"></div>
+
+  <!-- ══ 우측 패널 ══ -->
+  <div class="right-panel" :class="editMode?'overflow-hidden':''">
+    <!-- 편집 모드 -->
+    <template v-if="editMode">
+      <div class="bg-white border-b border-slate-200 px-5 py-3 flex items-center gap-3 shrink-0">
+        <span class="text-sm font-semibold text-slate-700">{{ isNew ? '새 레퍼런스 등록' : '편집' }}</span>
+        <div class="flex gap-2 ml-auto">
+          <button @click="saveItem" :disabled="saving" class="btn btn-primary text-xs px-4 disabled:opacity-40">
+            {{ saving ? '저장 중...' : '저장' }}
+          </button>
+          <button @click="cancelEdit" class="btn btn-secondary text-xs px-3">취소</button>
+        </div>
+      </div>
+      <div class="flex-1 overflow-y-auto p-5 space-y-3" style="height:calc(100vh - 57px)">
+        <input v-model="form.title" type="text" placeholder="제목 *" class="inp text-sm">
+        <div class="flex gap-2">
+          <select v-model="form.category" class="inp text-sm flex-1">
+            <option value="">유형 없음</option>
+            <option v-for="c in categoryList" :key="c.id" :value="c.name">{{ c.name }}</option>
+          </select>
+          <select v-model="form.process_type" class="inp text-sm flex-1">
+            <option value="">처리유형 없음</option>
+            <option v-for="p in processTypeList" :key="p.id" :value="p.name">{{ p.name }}</option>
+          </select>
+        </div>
+        <input v-model="form.tags" type="text" placeholder="태그 (쉼표 구분)" class="inp text-sm">
+        <div class="editor-wrap" style="height:calc(100vh - 280px)">
+          <div id="editor-mount"></div>
+        </div>
+      </div>
+    </template>
+
+    <!-- 보기 모드 -->
+    <template v-else-if="selected">
+      <div class="bg-white border-b border-slate-200 px-5 py-3">
+        <div class="flex items-start gap-3">
+          <div class="flex-1 min-w-0">
+            <h2 class="text-lg font-semibold text-slate-900 leading-tight">{{ selected.title }}</h2>
+            <div class="flex items-center gap-2 mt-1 flex-wrap">
+              <span v-if="selected.category" class="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{{ selected.category }}</span>
+              <span v-if="selected.process_type" class="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">{{ selected.process_type }}</span>
+              <span v-if="selected.tags" class="text-xs text-slate-400">{{ selected.tags }}</span>
+              <span class="text-xs text-slate-300 ml-auto">수정: {{ selected.updated_at?.slice(0,10) }}</span>
+            </div>
+          </div>
+          <div class="flex gap-2 shrink-0">
+            <button @click="startEdit" class="btn btn-secondary text-xs px-3">편집</button>
+            <button @click="deleteItem" class="btn btn-danger text-xs px-3">삭제</button>
+          </div>
+        </div>
+      </div>
+      <div class="right-tab-bar bg-white">
+        <div @click="rightTab='content'" :class="['right-tab',rightTab==='content'?'active':'']">내용</div>
+        <div @click="rightTab='vocs'"    :class="['right-tab',rightTab==='vocs'?'active':'']">연결 VOC<span v-if="linkedVocs.length" class="ml-1 text-xs bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full">{{ linkedVocs.length }}</span></div>
+      </div>
+      <div class="p-6">
+        <div v-if="rightTab==='content'" class="card p-6">
+          <div v-html="renderContent(selected.content)" class="text-sm text-slate-700 leading-relaxed prose-content"></div>
+        </div>
+        <div v-if="rightTab==='vocs'" class="space-y-3">
+          <div v-if="!linkedVocs.length" class="empty-state h-32">연결된 VOC가 없습니다</div>
+          <div v-for="v in linkedVocs" :key="v.id" class="card p-4 flex items-center gap-3">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-0.5">
+                <span class="text-xs font-mono text-slate-400">{{ v.voc_number||('#'+v.id) }}</span>
+                <span :class="['badge','status-'+v.status]">{{ statusLabel[v.status] }}</span>
+              </div>
+              <div class="text-sm font-medium text-slate-800 truncate">{{ v.title }}</div>
+              <div v-if="v.assignee_name" class="text-xs text-slate-500 mt-0.5">{{ v.assignee_name }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <div v-else class="empty-state h-full flex-col gap-3 text-slate-400">
+      <svg width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="text-slate-200"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+      <span>목록에서 항목을 선택하세요</span>
+    </div>
+  </div>
+
+</div>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
+<script src="../js/common.js"></script>
+<script>
+const { createApp, ref, computed, onMounted, nextTick } = Vue;
+createApp({
+  setup() {
+    const { mpWidth, applyWidth, startResize } = useMpResize();
+
+    const typeItems       = ref({});
+    const statusLabel     = computed(() => buildStatusLabel(typeItems.value['voc_status']||[]));
+    const categoryList    = computed(() => (typeItems.value['category']||[]).filter(x=>!x.parent_id));
+    const processTypeList = computed(() => (typeItems.value['process_type']||[]));
+
+    const list            = ref([]);
+    const filterSearch    = ref('');
+    const filterCategory  = ref('all');
+    const filterProcessType = ref('all');
+    let searchTimer = null;
+
+    const selected   = ref(null);
+    const editMode   = ref(false);
+    const isNew      = ref(false);
+    const saving     = ref(false);
+    const rightTab   = ref('content');
+    const linkedVocs = ref([]);
+
+    const form = ref({ title:'', content:'', category:'', process_type:'', tags:'' });
+    let editor = null;
+
+    const debouncedLoad = () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(loadList, 300);
+    };
+
+    const loadList = async () => {
+      list.value = await eel.get_knowledge(
+        filterSearch.value || null,
+        filterCategory.value === 'all' ? null : filterCategory.value,
+        filterProcessType.value === 'all' ? null : filterProcessType.value
+      )();
+    };
+
+    const openItem = async (k) => {
+      selected.value = k;
+      rightTab.value = 'content';
+      editMode.value = false;
+      linkedVocs.value = await eel.get_knowledge_vocs(k.id)();
+    };
+
+    const startNew = async () => {
+      selected.value = null;
+      isNew.value = true;
+      form.value = { title:'', content:'', category:'', process_type:'', tags:'' };
+      editMode.value = true;
+      await nextTick();
+      mountEditor('');
+    };
+
+    const startEdit = async () => {
+      if (!selected.value) return;
+      isNew.value = false;
+      form.value = {
+        title: selected.value.title,
+        content: selected.value.content,
+        category: selected.value.category || '',
+        process_type: selected.value.process_type || '',
+        tags: selected.value.tags || '',
+      };
+      editMode.value = true;
+      await nextTick();
+      mountEditor(selected.value.content || '');
+    };
+
+    const mountEditor = (initialValue) => {
+      if (editor) { try { editor.destroy(); } catch(e){} editor = null; }
+      const el = document.getElementById('editor-mount');
+      if (!el) return;
+      editor = new toastui.Editor({
+        el,
+        height: '100%',
+        initialEditType: 'wysiwyg',
+        previewStyle: 'vertical',
+        initialValue,
+        toolbarItems: [
+          ['heading','bold','italic','strike'],
+          ['hr','quote'],
+          ['ul','ol','task'],
+          ['table','link'],
+          ['code','codeblock'],
+        ],
+      });
+    };
+
+    const cancelEdit = () => {
+      editMode.value = false;
+      if (editor) { try { editor.destroy(); } catch(e){} editor = null; }
+    };
+
+    const saveItem = async () => {
+      if (!form.value.title.trim()) { alert('제목을 입력하세요.'); return; }
+      saving.value = true;
+      const content = editor ? editor.getHTML() : form.value.content;
+      const data = { ...form.value, content };
+      let result;
+      if (isNew.value) {
+        result = await eel.create_knowledge(data)();
+      } else {
+        result = await eel.update_knowledge(selected.value.id, data)();
+      }
+      saving.value = false;
+      if (result.success) {
+        if (editor) { try { editor.destroy(); } catch(e){} editor = null; }
+        editMode.value = false;
+        await loadList();
+        if (isNew.value) {
+          const found = list.value.find(k=>k.id===result.id);
+          if (found) await openItem(found);
+        } else {
+          const found = list.value.find(k=>k.id===selected.value.id);
+          if (found) await openItem(found);
+        }
+      } else alert(result.error || '저장 실패');
+    };
+
+    const deleteItem = async () => {
+      if (!selected.value || !confirm('이 레퍼런스를 삭제하시겠습니까?')) return;
+      await eel.delete_knowledge(selected.value.id)();
+      selected.value = null;
+      await loadList();
+    };
+
+    onMounted(async () => {
+      applyWidth(mpWidth.value);
+      async function loadTypeSystem_() {
+        const groups = await eel.get_type_groups()();
+        const pairs  = await Promise.all(groups.map(g=>eel.get_type_items(g.code)().then(items=>[g.code,items])));
+        const map={};
+        for(const[c,i] of pairs) map[c]=i;
+        return map;
+      }
+      typeItems.value = await loadTypeSystem_();
+      await loadList();
+    });
+
+    return {
+      startResize,
+      statusLabel, categoryList, processTypeList,
+      list, filterSearch, filterCategory, filterProcessType,
+      selected, editMode, isNew, saving, rightTab, linkedVocs,
+      form,
+      debouncedLoad, loadList, openItem, startNew, startEdit, cancelEdit, saveItem, deleteItem,
+      renderContent,
+    };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>

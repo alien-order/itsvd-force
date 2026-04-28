@@ -50,23 +50,35 @@ def get_items(group_code):
     return [dict(r) for r in rows]
 
 
-def add_item(group_code, name, value=''):
+def add_item(group_code, name, value='', parent_id=None):
     name  = name.strip()
-    value = value.strip() if value else name
+    value = (value or '').strip()
     if not name:
         return {'success': False, 'error': '이름을 입력하세요.'}
+    parent_id = int(parent_id) if parent_id else None
     try:
         with get_conn() as conn:
             max_order = conn.execute(
-                'SELECT COALESCE(MAX(sort_order),0) FROM type_items WHERE group_code=?', (group_code,)
+                'SELECT COALESCE(MAX(sort_order),0) FROM type_items WHERE group_code=? AND (parent_id IS ? OR parent_id=?)',
+                (group_code, parent_id, parent_id)
             ).fetchone()[0]
             conn.execute(
-                'INSERT INTO type_items (group_code, name, value, sort_order) VALUES (?,?,?,?)',
-                (group_code, name, value, max_order + 1)
+                'INSERT INTO type_items (group_code, name, value, sort_order, parent_id) VALUES (?,?,?,?,?)',
+                (group_code, name, value, max_order + 1, parent_id)
             )
         return {'success': True}
     except Exception:
         return {'success': False, 'error': '이미 존재하는 항목입니다.'}
+
+
+def update_item(item_id, name, value=''):
+    name  = name.strip()
+    value = (value or '').strip()
+    if not name:
+        return {'success': False, 'error': '이름을 입력하세요.'}
+    with get_conn() as conn:
+        conn.execute('UPDATE type_items SET name=?, value=? WHERE id=?', (name, value, item_id))
+    return {'success': True}
 
 
 def delete_item(item_id):

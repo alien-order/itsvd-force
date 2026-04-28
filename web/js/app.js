@@ -1,5 +1,14 @@
 const { createApp, ref, reactive, computed, onMounted, watch, nextTick } = Vue;
 
+const BUILTIN_ICONS = {
+  allvoc:    `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>`,
+  active:    `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>`,
+  stats:     `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>`,
+  knowledge: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>`,
+  board:     `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>`,
+  settings:  `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3" stroke-width="2"/>`,
+};
+
 // Single rich-text editor instance (one visible at a time)
 let _editor = null;
 
@@ -19,7 +28,7 @@ createApp({
     const typeGroups = ref([]);
     const typeItems  = ref({}); // { group_code: [...items] }
 
-    const categoryList    = computed(() => typeItems.value['category']     || []);
+    const categoryList    = computed(() => (typeItems.value['category'] || []).filter(x => !x.parent_id));
     const processTypeList = computed(() => typeItems.value['process_type'] || []);
     const statusItemsList = computed(() => typeItems.value['voc_status']   || []);
 
@@ -47,6 +56,35 @@ createApp({
       applyZoom(uiZoom.value);
       localStorage.setItem('ui_zoom', uiZoom.value);
     };
+
+    // ── 미들패널 리사이즈 ──
+    const mpWidth = ref(parseInt(localStorage.getItem('mp_width') || '268'));
+    let _mpDragging = false, _mpStartX = 0, _mpStartW = 0;
+    const applyMpWidth = (w) => {
+      document.getElementById('app').style.setProperty('--mp-width', w + 'px');
+    };
+    const startMpResize = (e) => {
+      _mpDragging = true; _mpStartX = e.clientX; _mpStartW = mpWidth.value;
+      document.addEventListener('mousemove', onMpResize);
+      document.addEventListener('mouseup', stopMpResize);
+      document.querySelector('.resize-handle')?.classList.add('dragging');
+    };
+    const onMpResize = (e) => {
+      if (!_mpDragging) return;
+      const w = Math.max(200, Math.min(520, _mpStartW + e.clientX - _mpStartX));
+      mpWidth.value = w;
+      applyMpWidth(w);
+    };
+    const stopMpResize = () => {
+      _mpDragging = false;
+      localStorage.setItem('mp_width', mpWidth.value);
+      document.removeEventListener('mousemove', onMpResize);
+      document.removeEventListener('mouseup', stopMpResize);
+      document.querySelector('.resize-handle')?.classList.remove('dragging');
+    };
+
+    // ── 필터 접기/펼치기 ──
+    const filterCollapsed = ref(false);
 
     const loadTypeSystem = async () => {
       const groups = await eel.get_type_groups()();
@@ -388,16 +426,28 @@ createApp({
     // ═══════════════════════════════════════════════
     // 3. VOC 통계 (stats)
     // ═══════════════════════════════════════════════
-    const statsMode    = ref('monthly');
-    const statsData    = ref([]);
-    const selectedStat = ref(null);
+    const statsMode         = ref('monthly');
+    const statsData         = ref([]);
+    const selectedStat      = ref(null);
+    const statsDateFrom     = ref('');
+    const statsDateTo       = ref('');
+    const assigneeStatsData = ref({ assignees: [], all_statuses: [] });
+
+    const statusColorClass = (s) => {
+      const m = { open:'text-blue-600', in_progress:'text-yellow-600', resolved:'text-green-600', closed:'text-slate-500' };
+      return m[s] || 'text-slate-700';
+    };
 
     const loadStats = async () => {
       selectedStat.value = null;
+      const from = statsDateFrom.value || null;
+      const to   = statsDateTo.value   || null;
       if (statsMode.value === 'assignee') {
-        statsData.value = workload.value;
+        const result = await eel.get_assignee_stats(from, to)();
+        assigneeStatsData.value = result;
+        statsData.value = result.assignees;
       } else {
-        statsData.value = await eel.get_voc_stats(statsMode.value)();
+        statsData.value = await eel.get_voc_stats(statsMode.value, from, to)();
       }
     };
 
@@ -606,6 +656,66 @@ createApp({
     };
 
     // ═══════════════════════════════════════════════
+    // 커스텀 메뉴
+    // ═══════════════════════════════════════════════
+    const customMenus       = ref([]);
+    const activeCustomMenu  = ref(null);
+    const newMenuLabel      = ref('');
+    const newMenuIconColor  = ref('#6366f1');
+    const newMenuSourceType = ref('url');
+    const newMenuSourceVal  = ref('');
+
+    const loadCustomMenus = async () => { customMenus.value = await eel.get_custom_menus()(); };
+
+    const activeMenusList = computed(() => customMenus.value.filter(m => m.active));
+
+    const clickMenu = (m) => {
+      if (m.source_type === 'builtin') switchMenu(m.source_value);
+      else switchMenu('custom', m);
+    };
+
+    const isMenuActive = (m) => {
+      if (m.source_type === 'builtin') return activeMenu.value === m.source_value;
+      return activeMenu.value === 'custom' && activeCustomMenu.value?.id === m.id;
+    };
+
+    const addCustomMenu = async () => {
+      if (!newMenuLabel.value.trim()) return;
+      const result = await eel.add_custom_menu(newMenuLabel.value, newMenuIconColor.value, newMenuSourceType.value, newMenuSourceVal.value)();
+      if (result.success) {
+        newMenuLabel.value = ''; newMenuIconColor.value = '#6366f1'; newMenuSourceVal.value = '';
+        await loadCustomMenus();
+      }
+    };
+
+    const toggleCustomMenuActive = async (m) => {
+      const result = await eel.toggle_custom_menu_active(m.id)();
+      if (!result.success) { alert(result.error); return; }
+      if (m.active && isMenuActive(m)) await switchMenu('active');
+      await loadCustomMenus();
+    };
+
+    const deleteCustomMenu = async (id) => {
+      if (!confirm('메뉴를 삭제하시겠습니까?')) return;
+      const result = await eel.delete_custom_menu(id)();
+      if (!result.success) { alert(result.error); return; }
+      if (activeCustomMenu.value?.id === id) { activeMenu.value = 'active'; activeCustomMenu.value = null; }
+      await loadCustomMenus();
+    };
+
+    const moveCustomMenu = async (idx, dir) => {
+      const list = customMenus.value;
+      const newIdx = idx + dir;
+      if (newIdx < 0 || newIdx >= list.length) return;
+      const orderList = list.map((m, i) => ({ id: m.id, sort_order: i }));
+      const tmp = orderList[idx].sort_order;
+      orderList[idx].sort_order = orderList[newIdx].sort_order;
+      orderList[newIdx].sort_order = tmp;
+      await eel.update_custom_menu_order(orderList)();
+      await loadCustomMenus();
+    };
+
+    // ═══════════════════════════════════════════════
     // 6. 설정 (settings)
     // ═══════════════════════════════════════════════
     const settingsTab = ref('members');
@@ -662,15 +772,30 @@ createApp({
     const newItemName       = ref('');
     const newItemValue      = ref('');
     const itemError         = ref('');
+    const selectedLvl1Id    = ref(null);
+    const newLvl2Name       = ref('');
+    const newLvl2Value      = ref('');
+    const lvl2Error         = ref('');
 
     const currentGroup      = computed(() => typeGroups.value.find(g => g.code === selectedGroupCode.value));
-    const currentGroupItems = computed(() => typeItems.value[selectedGroupCode.value] || []);
+    const currentGroupItems = computed(() => {
+      const items = typeItems.value[selectedGroupCode.value] || [];
+      if (selectedGroupCode.value === 'category') return items.filter(x => !x.parent_id);
+      return items;
+    });
+    const currentLvl2Items  = computed(() => {
+      if (!selectedLvl1Id.value) return [];
+      return (typeItems.value['category'] || []).filter(x => x.parent_id === selectedLvl1Id.value);
+    });
 
     const selectGroup = (code) => {
       selectedGroupCode.value = code;
-      newItemName.value = '';
+      newItemName.value  = '';
       newItemValue.value = '';
-      itemError.value = '';
+      itemError.value    = '';
+      selectedLvl1Id.value = null;
+      newLvl2Name.value = '';
+      lvl2Error.value   = '';
     };
 
     const addTypeGroup = async () => {
@@ -707,11 +832,22 @@ createApp({
     const addTypeItem = async () => {
       itemError.value = '';
       if (!selectedGroupCode.value || !newItemName.value.trim()) return;
-      const result = await eel.add_type_item(selectedGroupCode.value, newItemName.value, newItemValue.value)();
+      const result = await eel.add_type_item(selectedGroupCode.value, newItemName.value, newItemValue.value, null)();
       if (result.success) {
         newItemName.value = ''; newItemValue.value = '';
         await loadTypeSystem();
       } else { itemError.value = result.error; }
+    };
+
+    const addLvl2Item = async (parentId) => {
+      lvl2Error.value = '';
+      if (!newLvl2Name.value.trim()) return;
+      const val = newLvl2Value.value.trim() || newLvl2Name.value.trim();
+      const result = await eel.add_type_item('category', newLvl2Name.value, val, parentId)();
+      if (result.success) {
+        newLvl2Name.value = ''; newLvl2Value.value = '';
+        await loadTypeSystem();
+      } else { lvl2Error.value = result.error; }
     };
 
     const deleteTypeItem = async (id) => {
@@ -734,65 +870,57 @@ createApp({
 
     // ─────────────────────────────────────────────
     const config = reactive({
-      fetch_method: 'static',
-      url_pattern: '', dynamic: false,
-      xpath_wait_seconds: 3,
-      xpath_selectors: { voc_number: '', title: '', content: '', requester: '', due_date: '', status: '', images: '' },
       api_url_pattern: '',
-      api_cookies: [],
-      api_field_map: { voc_number: '', title: '', content: '', requester: '', due_date: '', status: '' },
-      selectors: { voc_number: '', title: '', content: '', requester: '', due_date: '', status: '', images: '' },
+      api_token: '',
     });
+    const apiFieldMapList  = ref([]);  // [{col, path}, ...]
+    const vocColumns       = ref([]);
+    const newFieldMapCol   = ref('');
+    const newFieldMapPath  = ref('');
     const configSaved       = ref(false);
     const testNum           = ref('');
     const testLoading       = ref(false);
     const testResult        = ref(null);
     const newMember         = ref('');
+    const newMemberKnox     = ref('');
+    const newMemberIp       = ref('');
     const memberError       = ref('');
+    const editingAssigneeId = ref(null);
+    const editingAssignee   = reactive({ name: '', knox_id: '', ip_address: '' });
     const assignmentRules   = ref([]);
     const newRuleCategory   = ref('');
     const newRuleAssigneeId = ref('');
     const newRuleNote       = ref('');
-    const newCookieKey      = ref('');
-    const newCookieVal      = ref('');
 
-    const fetchMethods = [
-      { key: 'static',     label: '정적 HTTP',  desc: 'CSS 셀렉터' },
-      { key: 'api_cookie', label: '쿠키 API',   desc: 'JSON 응답' },
-      { key: 'xpath',      label: 'XPath 대기', desc: '동적 페이지' },
-    ];
+    const loadVocColumns = async () => { vocColumns.value = await eel.get_voc_columns()(); };
 
     const loadConfig = async () => {
       const d = await eel.get_config()();
-      config.fetch_method       = d.fetch_method || 'static';
-      config.url_pattern        = d.url_pattern || '';
-      config.dynamic            = d.dynamic || false;
-      config.xpath_wait_seconds = d.xpath_wait_seconds ?? 3;
-      config.api_url_pattern    = d.api_url_pattern || '';
-      config.api_cookies        = (d.api_cookies || []).map(c => ({ ...c }));
-      Object.assign(config.api_field_map,   d.api_field_map   || {});
-      Object.assign(config.selectors,       d.selectors       || {});
-      Object.assign(config.xpath_selectors, d.xpath_selectors || {});
+      config.api_url_pattern = d.api_url_pattern || '';
+      config.api_token       = d.api_token || '';
+      const rawMap = d.api_field_map || [];
+      if (Array.isArray(rawMap)) {
+        apiFieldMapList.value = rawMap.map(x => ({ ...x }));
+      } else {
+        apiFieldMapList.value = Object.entries(rawMap).filter(([,v]) => v).map(([k, v]) => ({ col: k, path: v }));
+      }
     };
 
     const saveConfig = async () => {
-      const payload = {
-        ...config,
-        selectors:       { ...config.selectors },
-        xpath_selectors: { ...config.xpath_selectors },
-        api_field_map:   { ...config.api_field_map },
-        api_cookies:     config.api_cookies.map(c => ({ ...c })),
-      };
-      await eel.save_config(payload)();
+      await eel.save_config({
+        api_url_pattern: config.api_url_pattern,
+        api_token:       config.api_token,
+        api_field_map:   apiFieldMapList.value.map(x => ({ ...x })),
+      })();
       configSaved.value = true; setTimeout(() => configSaved.value = false, 2000);
     };
 
-    const addApiCookie = () => {
-      if (!newCookieKey.value.trim()) return;
-      config.api_cookies.push({ key: newCookieKey.value.trim(), value: newCookieVal.value });
-      newCookieKey.value = ''; newCookieVal.value = '';
+    const addApiFieldMap = () => {
+      if (!newFieldMapCol.value) return;
+      apiFieldMapList.value.push({ col: newFieldMapCol.value, path: newFieldMapPath.value });
+      newFieldMapCol.value = ''; newFieldMapPath.value = '';
     };
-    const removeApiCookie = (idx) => { config.api_cookies.splice(idx, 1); };
+    const removeApiFieldMap = (idx) => { apiFieldMapList.value.splice(idx, 1); };
 
     const testFetch = async () => {
       if (!testNum.value.trim()) return;
@@ -803,9 +931,32 @@ createApp({
 
     const addMember = async () => {
       memberError.value = '';
-      const result = await eel.add_assignee(newMember.value)();
-      if (result.success) { newMember.value = ''; await loadAssignees(); await loadWorkload(); }
-      else memberError.value = result.error;
+      const result = await eel.add_assignee(newMember.value.trim(), newMemberKnox.value.trim(), newMemberIp.value.trim())();
+      if (result.success) {
+        newMember.value = ''; newMemberKnox.value = ''; newMemberIp.value = '';
+        await loadAssignees(); await loadWorkload();
+      } else memberError.value = result.error;
+    };
+
+    const deleteMember = async (id) => {
+      if (!confirm('담당자를 삭제하시겠습니까?')) return;
+      const result = await eel.delete_assignee(id)();
+      if (result.success) { await loadAssignees(); await loadWorkload(); await loadNextUp(); }
+      else alert(result.error);
+    };
+
+    const startEditAssignee = (a) => {
+      editingAssigneeId.value = a.id;
+      Object.assign(editingAssignee, { name: a.name, knox_id: a.knox_id || '', ip_address: a.ip_address || '' });
+    };
+
+    const saveAssignee = async () => {
+      if (!editingAssigneeId.value) return;
+      const result = await eel.update_assignee(editingAssigneeId.value, editingAssignee.name, editingAssignee.knox_id, editingAssignee.ip_address)();
+      if (result.success) {
+        editingAssigneeId.value = null;
+        await loadAssignees();
+      } else alert(result.error);
     };
 
     const toggleMember = async (id) => {
@@ -841,16 +992,6 @@ createApp({
       await loadAssignmentRules(); await loadNextUp();
     };
 
-    const selectorFields = [
-      { key: 'voc_number', label: 'VOC 번호' },
-      { key: 'title',      label: '제목' },
-      { key: 'content',    label: '내용' },
-      { key: 'requester',  label: '요청자' },
-      { key: 'due_date',   label: '완료요청일' },
-      { key: 'status',     label: '처리상태', hint: '동기화용' },
-      { key: 'images',     label: '이미지 범위', hint: '비워두면 content 영역 전체' },
-    ];
-
     // ── 데이터 Sync 모달 ──
     const syncModalOpen    = ref(false);
     const syncModalItems   = ref([]);
@@ -858,8 +999,7 @@ createApp({
     const syncModalRunning = ref(false);
 
     const openSyncModal = async () => {
-      const vocs = await eel.get_vocs('in_progress')();
-      syncModalItems.value   = vocs.map(v => ({
+      syncModalItems.value   = activeVocList.value.map(v => ({
         id: v.id, voc_number: v.voc_number || ('#' + v.id),
         title: v.title, status: 'pending', error: '',
       }));
@@ -976,30 +1116,34 @@ createApp({
     // ═══════════════════════════════════════════════
     // 메뉴 전환
     // ═══════════════════════════════════════════════
-    const switchMenu = async (menu) => {
+    const switchMenu = async (menu, customMenuObj = null) => {
       _destroyEditor();
-      activeMenu.value  = menu;
-      selectedVoc.value = null;
+      activeMenu.value       = menu;
+      activeCustomMenu.value = customMenuObj;
+      selectedVoc.value      = null;
+      if (menu === 'custom')    { return; }
       if (menu === 'active')    { await Promise.all([loadActiveVocs(), loadWorkload(), loadNextUp(), generateReport()]); }
       if (menu === 'allvoc')    { await loadTypeSystem(); await loadAllVoc(); }
       if (menu === 'stats')     { await loadWorkload(); await loadStats(); }
       if (menu === 'knowledge') { await loadTypeSystem(); await loadKnowledge(); }
       if (menu === 'board')     { await loadBoard(); }
       if (menu === 'settings')  {
-        await Promise.all([loadConfig(), loadAssignmentRules(), loadVacations(), loadTypeSystem()]);
+        await Promise.all([loadConfig(), loadVocColumns(), loadAssignmentRules(), loadVacations(), loadTypeSystem(), loadCustomMenus()]);
         if (!settingsTab.value) settingsTab.value = 'members';
       }
     };
 
     onMounted(async () => {
       applyZoom(uiZoom.value);
+      applyMpWidth(mpWidth.value);
       imageSupport.value = await eel.check_image_support()();
-      await Promise.all([loadAssignees(), loadWorkload(), loadActiveVocs(), loadNextUp(), generateReport(), loadTypeSystem()]);
+      await Promise.all([loadAssignees(), loadWorkload(), loadActiveVocs(), loadNextUp(), generateReport(), loadTypeSystem(), loadCustomMenus()]);
     });
 
     return {
       activeMenu, switchMenu, assignees, workload, nextUp, imageSupport,
       uiZoom, setZoom,
+      mpWidth, filterCollapsed, startMpResize,
       typeGroups, typeItems, categoryList, processTypeList, statusItemsList,
       priorityLabel, statusLabel, statusList, assignTypeLabel, assignTypeColor,
       todayStr, getDday, ddayLabel, ddayCls,
@@ -1023,6 +1167,7 @@ createApp({
       loadAllVoc, onAllVocSearch,
       // 통계
       statsMode, statsData, selectedStat,
+      statsDateFrom, statsDateTo, assigneeStatsData, statusColorClass,
       loadStats, formatPeriod, goToAllVocFiltered, goToActiveFiltered,
       // 레퍼런스
       knowledgeList, knowledgeSearch, knowledgeCat, knowledgeProcessType,
@@ -1038,10 +1183,12 @@ createApp({
       // 설정
       settingsTab,
       config, configSaved, testNum, testLoading, testResult,
-      fetchMethods, newCookieKey, newCookieVal, addApiCookie, removeApiCookie,
-      newMember, memberError, assignmentRules, newRuleCategory, newRuleAssigneeId, newRuleNote,
+      apiFieldMapList, vocColumns, newFieldMapCol, newFieldMapPath, addApiFieldMap, removeApiFieldMap,
+      newMember, newMemberKnox, newMemberIp, memberError,
+      editingAssigneeId, editingAssignee, startEditAssignee, saveAssignee, deleteMember,
+      assignmentRules, newRuleCategory, newRuleAssigneeId, newRuleNote,
       loadConfig, saveConfig, testFetch, addMember, toggleMember, moveMember,
-      loadAssignmentRules, saveRule, deleteRule, selectorFields,
+      loadAssignmentRules, saveRule, deleteRule,
       // 데이터 Sync 모달
       syncModalOpen, syncModalItems, syncModalCurrent, syncModalRunning,
       openSyncModal, runBatchSync, resetSyncModal, closeSyncModal,
@@ -1055,9 +1202,15 @@ createApp({
       // 유형 관리
       PROTECTED_GROUPS, selectedGroupCode, newGroupCode, newGroupLabel, groupError,
       newItemName, newItemValue, itemError,
-      currentGroup, currentGroupItems,
+      selectedLvl1Id, newLvl2Name, newLvl2Value, lvl2Error,
+      currentGroup, currentGroupItems, currentLvl2Items,
       selectGroup, addTypeGroup, deleteTypeGroup, moveTypeGroup,
-      addTypeItem, deleteTypeItem, moveTypeItem,
+      addTypeItem, addLvl2Item, deleteTypeItem, moveTypeItem,
+      // 커스텀 메뉴
+      BUILTIN_ICONS, customMenus, activeMenusList, activeCustomMenu,
+      newMenuLabel, newMenuIconColor, newMenuSourceType, newMenuSourceVal,
+      clickMenu, isMenuActive,
+      addCustomMenu, toggleCustomMenuActive, deleteCustomMenu, moveCustomMenu,
     };
   }
 }).mount('#app');

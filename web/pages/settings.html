@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>설정</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="../css/style.css">
+  <script type="text/javascript" src="/eel.js"></script>
+</head>
+<body style="margin:0;height:100%;overflow:hidden">
+<div id="app" style="display:flex;height:100%;overflow:hidden;background:#f8fafc">
+
+  <!-- ══ 사이드 탭 ══ -->
+  <div style="width:160px;flex-shrink:0;background:#fff;border-right:1px solid #eef2f7;display:flex;flex-direction:column;padding:16px 8px;gap:1px;overflow-y:auto">
+    <div class="text-xs font-bold text-slate-400 px-3 mb-2" style="letter-spacing:.08em;text-transform:uppercase">설정</div>
+    <div v-for="tab in tabs" :key="tab.id"
+      @click="switchTab(tab.id)"
+      :class="['flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer text-sm transition-colors',
+               activeTab===tab.id?'bg-indigo-50 text-indigo-700 font-semibold':'text-slate-600 hover:bg-slate-50']">
+      {{ tab.label }}
+    </div>
+  </div>
+
+  <!-- ══ 콘텐츠 ══ -->
+  <div class="flex-1 overflow-y-auto">
+  <div style="max-width:820px;margin:0 auto;padding:24px">
+
+    <!-- ── 담당자 ── -->
+    <div v-if="activeTab==='assignees'">
+      <div class="flex items-center gap-3 mb-4">
+        <h2 class="text-base font-bold text-slate-800">담당자 관리</h2>
+        <button @click="showAddAssignee=!showAddAssignee" class="btn btn-primary text-xs px-3 ml-auto">+ 추가</button>
+      </div>
+      <div v-if="showAddAssignee" class="card p-4 mb-4 space-y-2">
+        <div class="grid grid-cols-3 gap-2">
+          <input v-model="newAssignee.name" type="text" placeholder="이름 *" class="inp text-sm">
+          <input v-model="newAssignee.knox_id" type="text" placeholder="KNOX ID" class="inp text-sm">
+          <input v-model="newAssignee.ip_address" type="text" placeholder="IP 주소" class="inp text-sm">
+        </div>
+        <div class="flex gap-2">
+          <button @click="addAssignee" class="btn btn-primary text-xs px-4">추가</button>
+          <button @click="showAddAssignee=false" class="btn btn-secondary text-xs px-3">취소</button>
+        </div>
+      </div>
+      <div class="card overflow-hidden">
+        <div v-if="!assignees.length" class="p-6 text-center text-sm text-slate-400">담당자가 없습니다</div>
+        <div v-for="a in assignees" :key="a.id"
+          class="flex items-center gap-3 px-4 py-3 border-b border-slate-50 last:border-0"
+          :class="!a.active?'opacity-55':''">
+          <div class="avatar">{{ a.name.charAt(0) }}</div>
+          <div class="flex-1 min-w-0">
+            <template v-if="editingAssigneeId===a.id">
+              <div class="grid grid-cols-3 gap-2">
+                <input v-model="editAssigneeForm.name" type="text" placeholder="이름" class="inp text-xs py-1">
+                <input v-model="editAssigneeForm.knox_id" type="text" placeholder="KNOX ID" class="inp text-xs py-1">
+                <input v-model="editAssigneeForm.ip_address" type="text" placeholder="IP" class="inp text-xs py-1">
+              </div>
+              <div class="flex gap-2 mt-1.5">
+                <button @click="saveAssignee(a.id)" class="btn btn-primary text-xs px-3">저장</button>
+                <button @click="editingAssigneeId=null" class="btn btn-secondary text-xs px-2">취소</button>
+              </div>
+            </template>
+            <template v-else>
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-medium text-sm text-slate-800">{{ a.name }}</span>
+                <span v-if="!a.active" class="text-xs text-slate-300">비활성</span>
+                <span v-if="a.knox_id" class="text-xs text-slate-400 font-mono bg-slate-50 px-1.5 py-0.5 rounded">{{ a.knox_id }}</span>
+                <span v-if="a.ip_address" class="text-xs text-slate-400 font-mono bg-slate-50 px-1.5 py-0.5 rounded">{{ a.ip_address }}</span>
+              </div>
+              <div class="text-xs text-slate-400 mt-0.5">순번 {{ a.turn_order }} · 보류 {{ a.hold_turns }}회</div>
+            </template>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0" v-if="editingAssigneeId!==a.id">
+            <button @click="toggleAssignee(a)" class="btn text-xs px-2.5 py-1"
+              :class="a.active?'btn-secondary':'bg-green-50 text-green-700 border border-green-200'">
+              {{ a.active?'비활성화':'활성화' }}
+            </button>
+            <button @click="startEditAssignee(a)" class="btn btn-secondary text-xs px-2.5 py-1">편집</button>
+            <button @click="deleteAssignee(a.id)" class="btn btn-danger text-xs px-2.5 py-1">삭제</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 배정 관리 ── -->
+    <div v-if="activeTab==='assignment'">
+      <h2 class="text-base font-bold text-slate-800 mb-4">배정 관리</h2>
+
+      <!-- 배정 순번 -->
+      <div class="card p-5 mb-5">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-slate-700">배정 순번</h3>
+          <button @click="saveTurnOrder" class="btn btn-primary text-xs px-3">순번 저장</button>
+        </div>
+        <p class="text-xs text-slate-400 mb-3">↑↓ 버튼으로 순서를 변경하고 저장하세요.</p>
+        <div class="space-y-1.5">
+          <div v-for="(a,i) in turnOrder" :key="a.id"
+            class="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 border border-slate-100">
+            <span class="text-xs font-mono text-slate-400 w-5 text-center shrink-0">{{ i+1 }}</span>
+            <div class="avatar sm">{{ a.name.charAt(0) }}</div>
+            <span class="text-sm font-medium text-slate-700 flex-1">{{ a.name }}</span>
+            <span v-if="!a.active" class="text-xs text-slate-300">(비활성)</span>
+            <span v-if="a.hold_turns" class="text-xs bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">보류 {{ a.hold_turns }}</span>
+            <span v-if="a.priority_next" class="text-xs bg-green-100 text-green-600 px-1.5 py-0.5 rounded-full">우선</span>
+            <div class="flex gap-1 shrink-0">
+              <button @click="turnOrderMoveUp(i)" :disabled="i===0" class="btn btn-secondary text-xs px-1.5 py-1 disabled:opacity-30">↑</button>
+              <button @click="turnOrderMoveDown(i)" :disabled="i===turnOrder.length-1" class="btn btn-secondary text-xs px-1.5 py-1 disabled:opacity-30">↓</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 전담 배정 규칙 -->
+      <div class="card p-5 mb-5">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-slate-700">유형별 전담 배정</h3>
+          <button @click="showAddRule=!showAddRule" class="btn btn-secondary text-xs px-3">+ 추가</button>
+        </div>
+        <div v-if="showAddRule" class="flex gap-2 mb-3 p-3 bg-slate-50 rounded-lg flex-wrap">
+          <select v-model="newRule.category" class="inp text-xs py-1.5 flex-1" style="min-width:120px">
+            <option value="">유형 선택</option>
+            <option v-for="c in categoryList" :key="c.id" :value="c.name">{{ c.name }}</option>
+          </select>
+          <select v-model="newRule.assignee_id" class="inp text-xs py-1.5 flex-1" style="min-width:120px">
+            <option value="">담당자 선택</option>
+            <option v-for="a in assignees.filter(x=>x.active)" :key="a.id" :value="String(a.id)">{{ a.name }}</option>
+          </select>
+          <input v-model="newRule.note" type="text" placeholder="비고" class="inp text-xs py-1.5 flex-1" style="min-width:100px">
+          <button @click="saveRule" class="btn btn-primary text-xs px-3">저장</button>
+          <button @click="showAddRule=false" class="btn btn-secondary text-xs px-2">✕</button>
+        </div>
+        <div v-if="!rules.length" class="text-sm text-slate-400 py-2 text-center">설정된 규칙이 없습니다</div>
+        <div v-for="r in rules" :key="r.id" class="flex items-center gap-3 py-2 border-b border-slate-50 last:border-0">
+          <span class="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{{ r.category }}</span>
+          <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="text-slate-300 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+          <span class="text-sm font-medium text-slate-800 flex-1">{{ r.assignee_name }}</span>
+          <span v-if="r.note" class="text-xs text-slate-400">{{ r.note }}</span>
+          <button @click="deleteRule(r.id)" class="btn btn-danger text-xs px-2.5 py-1">삭제</button>
+        </div>
+      </div>
+
+      <!-- 휴가 관리 -->
+      <div class="card p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-slate-700">휴가 관리</h3>
+          <button @click="showAddVacation=!showAddVacation" class="btn btn-secondary text-xs px-3">+ 추가</button>
+        </div>
+        <div v-if="showAddVacation" class="flex gap-2 mb-3 p-3 bg-slate-50 rounded-lg flex-wrap">
+          <select v-model="newVacation.assignee_id" class="inp text-xs py-1.5 flex-1" style="min-width:120px">
+            <option value="">담당자 선택</option>
+            <option v-for="a in assignees.filter(x=>x.active)" :key="a.id" :value="String(a.id)">{{ a.name }}</option>
+          </select>
+          <input v-model="newVacation.vacation_date" type="date" class="inp text-xs py-1.5 flex-1" style="min-width:120px">
+          <select v-model="newVacation.vacation_type" class="inp text-xs py-1.5 flex-1" style="min-width:100px">
+            <option value="연차">연차</option>
+            <option value="오전반차">오전반차</option>
+            <option value="오후반차">오후반차</option>
+          </select>
+          <button @click="addVacation" class="btn btn-primary text-xs px-3">추가</button>
+          <button @click="showAddVacation=false" class="btn btn-secondary text-xs px-2">✕</button>
+        </div>
+        <div v-if="!vacations.length" class="text-sm text-slate-400 py-2 text-center">등록된 휴가가 없습니다</div>
+        <div v-for="v in vacations" :key="v.id"
+          :class="['flex items-center gap-3 py-2 border-b border-slate-50 last:border-0', v.is_past?'opacity-45':'']">
+          <div class="avatar sm">{{ (v.assignee_name||'?').charAt(0) }}</div>
+          <span class="text-sm text-slate-700">{{ v.assignee_name }}</span>
+          <span class="text-xs font-mono text-slate-500">{{ v.vacation_date }}</span>
+          <span class="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{{ v.vacation_type }}</span>
+          <span v-if="v.is_past" class="text-xs text-slate-300">지남</span>
+          <span class="flex-1"></span>
+          <button @click="deleteVacation(v.id)" class="btn btn-danger text-xs px-2.5 py-1">삭제</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 유형 관리 ── -->
+    <div v-if="activeTab==='types'">
+      <h2 class="text-base font-bold text-slate-800 mb-4">유형 관리</h2>
+      <div class="space-y-5">
+        <div v-for="g in typeGroups" :key="g.id" class="card p-5">
+          <h3 class="text-sm font-semibold text-slate-700 mb-1">{{ g.label }}</h3>
+          <p class="text-xs text-slate-400 mb-3">코드: <span class="font-mono">{{ g.code }}</span></p>
+
+          <!-- 업무유형(category)은 계층 구조 -->
+          <template v-if="g.code==='category'">
+            <div v-for="parent in getParentItems(g.code)" :key="parent.id" class="mb-4">
+              <!-- 상위 항목 -->
+              <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 border border-indigo-100 mb-1.5">
+                <div class="flex-1 min-w-0">
+                  <template v-if="editingItemId===parent.id">
+                    <div class="flex gap-2">
+                      <input v-model="editItemForm.name" type="text" placeholder="코드명" class="inp text-xs py-1 flex-1">
+                      <input v-model="editItemForm.value" type="text" placeholder="코드 (영문)" class="inp text-xs py-1" style="width:120px">
+                      <button @click="saveEditItem(g.code)" class="btn btn-primary text-xs px-2">저장</button>
+                      <button @click="editingItemId=null" class="btn btn-secondary text-xs px-2">✕</button>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-semibold text-indigo-800">{{ parent.name }}</span>
+                      <span v-if="parent.value" class="text-xs font-mono text-indigo-400 bg-indigo-100 px-1.5 py-0.5 rounded">{{ parent.value }}</span>
+                    </div>
+                  </template>
+                </div>
+                <div class="flex gap-1 shrink-0" v-if="editingItemId!==parent.id">
+                  <button @click="startEditItem(parent)" class="btn btn-secondary text-xs px-2 py-1">편집</button>
+                  <button @click="deleteParentItem(g.code, parent.id)" class="btn btn-danger text-xs px-2 py-1">삭제</button>
+                </div>
+              </div>
+
+              <!-- 하위 항목 -->
+              <div class="ml-5 space-y-1">
+                <div v-for="child in getChildItems(g.code, parent.id)" :key="child.id"
+                  class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-100">
+                  <svg width="8" height="8" fill="currentColor" viewBox="0 0 8 8" class="text-slate-300 shrink-0"><circle cx="4" cy="4" r="3"/></svg>
+                  <div class="flex-1 min-w-0">
+                    <template v-if="editingItemId===child.id">
+                      <div class="flex gap-2">
+                        <input v-model="editItemForm.name" type="text" placeholder="코드명" class="inp text-xs py-1 flex-1">
+                        <input v-model="editItemForm.value" type="text" placeholder="코드" class="inp text-xs py-1" style="width:110px">
+                        <button @click="saveEditItem(g.code)" class="btn btn-primary text-xs px-2">저장</button>
+                        <button @click="editingItemId=null" class="btn btn-secondary text-xs px-2">✕</button>
+                      </div>
+                    </template>
+                    <template v-else>
+                      <div class="flex items-center gap-2">
+                        <span class="text-sm text-slate-700">{{ child.name }}</span>
+                        <span v-if="child.value" class="text-xs font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{{ child.value }}</span>
+                      </div>
+                    </template>
+                  </div>
+                  <div class="flex gap-1 shrink-0" v-if="editingItemId!==child.id">
+                    <button @click="startEditItem(child)" class="btn btn-secondary text-xs px-2 py-1">편집</button>
+                    <button @click="deleteTypeItem(g.code, child.id)" class="btn btn-danger text-xs px-2 py-1">삭제</button>
+                  </div>
+                </div>
+
+                <!-- 하위 항목 추가 -->
+                <div class="flex gap-2 mt-1.5 ml-1">
+                  <input v-model="newChildName[parent.id]" type="text" placeholder="하위 코드명" class="inp text-xs py-1.5 flex-1">
+                  <input v-model="newChildValue[parent.id]" type="text" placeholder="코드" class="inp text-xs py-1.5" style="width:100px">
+                  <button @click="addChildItem(g.code, parent.id)" class="btn btn-secondary text-xs px-3">+ 추가</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 상위 항목 추가 -->
+            <div class="border-t border-slate-100 pt-4 mt-2">
+              <p class="text-xs font-semibold text-slate-500 mb-2">상위 항목 추가</p>
+              <div class="flex gap-2">
+                <input v-model="newTypeItem[g.code]" type="text" placeholder="코드명 (예: 마케팅)" class="inp text-xs py-1.5 flex-1"
+                  @keyup.enter="addParentItem(g.code)">
+                <input v-model="newTypeItemValue[g.code]" type="text" placeholder="코드 (예: marketing)" class="inp text-xs py-1.5" style="width:150px">
+                <button @click="addParentItem(g.code)" class="btn btn-secondary text-xs px-3">추가</button>
+              </div>
+            </div>
+          </template>
+
+          <!-- 처리유형/VOC상태는 평면 구조 (code + code_name) -->
+          <template v-else>
+            <div class="space-y-1 mb-3">
+              <div v-for="(item,idx) in getFlatItems(g.code)" :key="item.id"
+                class="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 border border-slate-100">
+                <div class="flex-1 min-w-0">
+                  <template v-if="editingItemId===item.id">
+                    <div class="flex gap-2">
+                      <input v-model="editItemForm.name" type="text" placeholder="코드명" class="inp text-xs py-1 flex-1">
+                      <input v-model="editItemForm.value" type="text" placeholder="코드 (영문)" class="inp text-xs py-1" style="width:130px">
+                      <button @click="saveEditItem(g.code)" class="btn btn-primary text-xs px-2">저장</button>
+                      <button @click="editingItemId=null" class="btn btn-secondary text-xs px-2">✕</button>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm text-slate-700">{{ item.name }}</span>
+                      <span v-if="item.value" class="text-xs font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{{ item.value }}</span>
+                    </div>
+                  </template>
+                </div>
+                <div class="flex gap-1 shrink-0" v-if="editingItemId!==item.id">
+                  <button @click="moveItemUp(g.code,idx)" :disabled="idx===0" class="btn btn-secondary text-xs px-1.5 py-1 disabled:opacity-30">↑</button>
+                  <button @click="moveItemDown(g.code,idx)" :disabled="idx===getFlatItems(g.code).length-1" class="btn btn-secondary text-xs px-1.5 py-1 disabled:opacity-30">↓</button>
+                  <button @click="startEditItem(item)" class="btn btn-secondary text-xs px-2 py-1">편집</button>
+                  <button @click="deleteTypeItem(g.code, item.id)" class="btn btn-danger text-xs px-2 py-1">삭제</button>
+                </div>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <input v-model="newTypeItem[g.code]" type="text" :placeholder="'코드명 (예: 처리완료)'" class="inp text-xs py-1.5 flex-1"
+                @keyup.enter="addFlatItem(g.code)">
+              <input v-model="newTypeItemValue[g.code]" type="text" placeholder="코드 (예: resolved)" class="inp text-xs py-1.5" style="width:150px">
+              <button @click="addFlatItem(g.code)" class="btn btn-secondary text-xs px-3">추가</button>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── API 설정 ── -->
+    <div v-if="activeTab==='api'">
+      <div class="flex items-center gap-3 mb-4">
+        <h2 class="text-base font-bold text-slate-800">API 설정</h2>
+        <button @click="saveApiConfig" :disabled="savingConfig" class="btn btn-primary text-xs px-4 ml-auto disabled:opacity-40">
+          {{ savingConfig?'저장 중...':'저장' }}
+        </button>
+      </div>
+      <div class="card p-5 space-y-5 mb-4">
+        <div>
+          <label class="text-xs font-semibold text-slate-500 mb-1.5 block">API URL 패턴</label>
+          <input v-model="apiConfig.api_url_pattern" type="text" placeholder="https://api.example.com/voc/{number}" class="inp text-sm">
+          <p class="text-xs text-slate-400 mt-1"><span class="font-mono bg-slate-100 px-1 py-0.5 rounded">{number}</span> 자리에 VOC 번호가 들어갑니다.</p>
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-slate-500 mb-1.5 block">
+            인증 토큰
+            <span class="font-normal text-slate-400 ml-2">→ 헤더 <span class="font-mono bg-slate-100 px-1 py-0.5 rounded text-slate-600">X-Auth-Token: &lt;값&gt;</span> 으로 전송됩니다</span>
+          </label>
+          <input v-model="apiConfig.api_token" type="password" placeholder="토큰 값을 입력하세요" class="inp text-sm">
+        </div>
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <label class="text-xs font-semibold text-slate-500">필드 매핑</label>
+              <p class="text-xs text-slate-400 mt-0.5">API 응답 JSON 경로를 VOC 컬럼에 매핑합니다. (예: <span class="font-mono">data.title</span> → title)</p>
+            </div>
+            <button @click="addFieldMapping" class="btn btn-secondary text-xs px-3">+ 추가</button>
+          </div>
+          <div class="space-y-2">
+            <div v-for="(m,i) in apiConfig.api_field_map" :key="i" class="flex gap-2 items-center">
+              <select v-model="m.col" class="inp text-xs py-1.5 flex-1">
+                <option value="">VOC 컬럼 선택</option>
+                <option v-for="c in vocColumns" :key="c" :value="c">{{ c }}</option>
+              </select>
+              <span class="text-xs text-slate-300 shrink-0">← JSON 경로</span>
+              <input v-model="m.path" type="text" placeholder="예: data.attributes.title" class="inp text-xs py-1.5 flex-1">
+              <button @click="apiConfig.api_field_map.splice(i,1)" class="btn btn-danger text-xs px-2">✕</button>
+            </div>
+            <div v-if="!apiConfig.api_field_map.length" class="text-xs text-slate-400 py-1.5">필드 매핑이 없습니다. + 추가를 눌러 설정하세요.</div>
+          </div>
+        </div>
+      </div>
+      <div v-if="configSaved" class="p-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">저장되었습니다.</div>
+    </div>
+
+    <!-- ── 메뉴 관리 ── -->
+    <div v-if="activeTab==='menus'">
+      <div class="flex items-center gap-3 mb-4">
+        <h2 class="text-base font-bold text-slate-800">메뉴 관리</h2>
+        <button @click="showAddMenu=!showAddMenu" class="btn btn-primary text-xs px-3 ml-auto">+ 추가</button>
+      </div>
+      <div v-if="showAddMenu" class="card p-4 mb-4 space-y-2">
+        <div class="grid grid-cols-3 gap-2">
+          <input v-model="newMenu.label" type="text" placeholder="메뉴 이름 *" class="inp text-sm col-span-1">
+          <input v-model="newMenu.section" type="text" placeholder="그룹 (예: VOC, 지식)" class="inp text-sm">
+          <div class="flex items-center gap-2">
+            <label class="text-xs text-slate-500 shrink-0">아이콘 색</label>
+            <input v-model="newMenu.icon_color" type="color" class="h-9 flex-1 rounded-lg border border-slate-200 cursor-pointer" style="padding:2px 4px">
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <select v-model="newMenu.source_type" class="inp text-sm" style="width:90px;flex-shrink:0">
+            <option value="file">파일</option>
+            <option value="url">URL</option>
+          </select>
+          <input v-model="newMenu.source_value" type="text"
+            :placeholder="newMenu.source_type==='file'?'파일명 예: allvoc.html':'https://...'"
+            class="inp text-sm flex-1">
+        </div>
+        <div class="flex gap-2">
+          <button @click="addMenu" class="btn btn-primary text-xs px-4">추가</button>
+          <button @click="showAddMenu=false" class="btn btn-secondary text-xs px-3">취소</button>
+        </div>
+      </div>
+      <div class="card overflow-hidden mb-3">
+        <div v-if="!menus.length" class="p-6 text-center text-sm text-slate-400">메뉴가 없습니다</div>
+        <div v-for="(m,i) in menus" :key="m.id"
+          :class="['flex items-center gap-3 px-4 py-3 border-b border-slate-50 last:border-0', !m.active?'opacity-50':'']">
+          <div class="shrink-0 flex items-center justify-center rounded-lg" style="width:24px;height:24px" :style="{background:m.icon_color||'#6366f1'}">
+            <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <template v-if="editingMenuId===m.id">
+              <div class="space-y-1.5">
+                <div class="grid grid-cols-3 gap-2">
+                  <input v-model="editMenuForm.label" type="text" placeholder="이름" class="inp text-xs py-1">
+                  <input v-model="editMenuForm.section" type="text" placeholder="그룹" class="inp text-xs py-1">
+                  <div class="flex items-center gap-1.5">
+                    <label class="text-xs text-slate-400">색</label>
+                    <input v-model="editMenuForm.icon_color" type="color" class="h-7 flex-1 rounded cursor-pointer" style="padding:1px 2px">
+                  </div>
+                </div>
+                <div class="flex gap-2">
+                  <select v-model="editMenuForm.source_type" class="inp text-xs py-1" style="width:80px;flex-shrink:0">
+                    <option value="file">파일</option>
+                    <option value="url">URL</option>
+                  </select>
+                  <input v-model="editMenuForm.source_value" type="text" placeholder="파일명 또는 URL" class="inp text-xs py-1 flex-1">
+                  <button @click="saveMenu(m.id)" class="btn btn-primary text-xs px-3">저장</button>
+                  <button @click="editingMenuId=null" class="btn btn-secondary text-xs px-2">✕</button>
+                </div>
+              </div>
+            </template>
+            <template v-else>
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-sm font-medium text-slate-800">{{ m.label }}</span>
+                <span v-if="m.section" class="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{{ m.section }}</span>
+                <span v-if="!m.active" class="text-xs text-slate-300">숨김</span>
+              </div>
+              <div class="text-xs text-slate-400 font-mono truncate">{{ m.source_type }}: {{ m.source_value }}</div>
+            </template>
+          </div>
+          <div class="flex items-center gap-1 shrink-0" v-if="editingMenuId!==m.id">
+            <button @click="menuMoveUp(i)" :disabled="i===0" class="btn btn-secondary text-xs px-1.5 py-1 disabled:opacity-30">↑</button>
+            <button @click="menuMoveDown(i)" :disabled="i===menus.length-1" class="btn btn-secondary text-xs px-1.5 py-1 disabled:opacity-30">↓</button>
+            <button @click="toggleMenu(m.id)" class="btn text-xs px-2.5 py-1 ml-1"
+              :class="m.active?'btn-secondary':'bg-green-50 text-green-700 border border-green-200'">
+              {{ m.active?'숨기기':'표시' }}
+            </button>
+            <button @click="startEditMenu(m)" class="btn btn-secondary text-xs px-2.5 py-1">편집</button>
+            <button @click="deleteMenu(m.id)" class="btn btn-danger text-xs px-2.5 py-1">삭제</button>
+          </div>
+        </div>
+      </div>
+      <button @click="saveMenuOrder" class="btn btn-secondary text-xs px-4">순서 저장</button>
+    </div>
+
+    <!-- ── VOC 배치처리 ── -->
+    <div v-if="activeTab==='batch'">
+      <div class="flex items-center gap-3 mb-4">
+        <h2 class="text-base font-bold text-slate-800">VOC 배치처리</h2>
+        <span class="text-xs text-slate-400">엑셀/CSV의 VOC 번호를 API에서 일괄 조회하여 저장합니다</span>
+      </div>
+      <div class="card p-5 mb-4">
+        <h3 class="text-sm font-semibold text-slate-700 mb-1">파일 업로드</h3>
+        <p class="text-xs text-slate-400 mb-3">첫 번째 열에 VOC 번호가 있는 .xlsx / .xls / .csv 파일을 선택하세요.</p>
+        <div class="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center cursor-pointer hover:border-indigo-300 transition-colors"
+          @click="$refs.batchFileInput.click()"
+          @dragover.prevent
+          @drop.prevent="onBatchFileDrop($event)">
+          <input type="file" ref="batchFileInput" @change="onBatchFileChange" accept=".xlsx,.xls,.csv,.txt" class="hidden">
+          <div class="text-slate-400 text-sm mb-1">클릭하거나 파일을 드래그하세요</div>
+          <div class="text-xs text-slate-300">.xlsx .xls .csv .txt 지원</div>
+        </div>
+        <p v-if="batchError" class="mt-2 text-xs text-red-500">{{ batchError }}</p>
+      </div>
+      <div v-if="batchItems.length" class="card p-5">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <span class="text-sm font-semibold text-slate-700">처리 목록</span>
+            <span class="text-xs text-slate-400 ml-2">{{ batchItems.length }}개</span>
+            <span v-if="batchRunning||batchDone>0" class="text-xs text-slate-500 ml-2">
+              ({{ batchDone }} / {{ batchItems.length }} 완료)
+            </span>
+          </div>
+          <div class="flex gap-2">
+            <button @click="startBatch" :disabled="batchRunning" class="btn btn-primary text-xs px-4 disabled:opacity-40">
+              {{ batchRunning ? '처리 중...' : '일괄 처리 시작' }}
+            </button>
+            <button @click="resetBatch" :disabled="batchRunning" class="btn btn-secondary text-xs px-3 disabled:opacity-40">초기화</button>
+          </div>
+        </div>
+        <div class="space-y-1 max-h-96 overflow-y-auto">
+          <div v-for="item in batchItems" :key="item.num" class="flex items-center gap-3 px-3 py-2 rounded-lg bg-slate-50">
+            <div class="shrink-0 w-5 h-5 flex items-center justify-center">
+              <svg v-if="item.status==='processing'" class="animate-spin w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"/>
+                <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" class="opacity-75"/>
+              </svg>
+              <svg v-else-if="item.status==='done'" class="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+              </svg>
+              <svg v-else-if="item.status==='failed'" class="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+              <div v-else class="w-4 h-4 rounded-full border-2 border-slate-200"></div>
+            </div>
+            <span class="text-xs font-mono text-slate-700 flex-1">{{ item.num }}</span>
+            <span v-if="item.action" :class="['text-xs px-1.5 py-0.5 rounded font-medium',
+              item.action==='created'?'bg-green-100 text-green-700':
+              item.action==='updated'?'bg-blue-100 text-blue-700':'bg-slate-100 text-slate-500']">
+              {{ item.action==='created'?'신규등록':item.action==='updated'?'업데이트':'건너뜀' }}
+            </span>
+            <span v-if="item.error" class="text-xs text-red-500 truncate" style="max-width:160px">{{ item.error }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  </div><!-- end content -->
+</div>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="../js/common.js"></script>
+<script>
+const { createApp, ref, computed, onMounted } = Vue;
+createApp({
+  setup() {
+    const tabs = [
+      { id:'assignees',  label:'담당자' },
+      { id:'assignment', label:'배정 관리' },
+      { id:'types',      label:'유형 관리' },
+      { id:'api',        label:'API 설정' },
+      { id:'menus',      label:'메뉴 관리' },
+      { id:'batch',      label:'VOC 배치처리' },
+    ];
+    const activeTab = ref('assignees');
+    const loading   = ref(false);
+
+    // ── 공통 데이터 ──────────────────────────────────────────────
+    const assignees    = ref([]);
+    const typeItems    = ref({});
+    const categoryList = computed(() => (typeItems.value['category']||[]).filter(x=>!x.parent_id));
+
+    const loadAssignees = async () => { assignees.value = await eel.get_assignees()(); };
+
+    async function loadTypeSystemMap() {
+      const groups = await eel.get_type_groups()();
+      const pairs  = await Promise.all(groups.map(g=>eel.get_type_items(g.code)().then(items=>[g.code,items])));
+      const map={};
+      for(const[c,i] of pairs) map[c]=i;
+      return map;
+    }
+
+    // ── 담당자 ──────────────────────────────────────────────────
+    const showAddAssignee    = ref(false);
+    const newAssignee        = ref({ name:'', knox_id:'', ip_address:'' });
+    const editingAssigneeId  = ref(null);
+    const editAssigneeForm   = ref({ name:'', knox_id:'', ip_address:'' });
+
+    const addAssignee = async () => {
+      const r = await eel.add_assignee(newAssignee.value.name, newAssignee.value.knox_id, newAssignee.value.ip_address)();
+      if (r.success) {
+        newAssignee.value = { name:'', knox_id:'', ip_address:'' };
+        showAddAssignee.value = false;
+        await loadAssignees();
+      } else alert(r.error);
+    };
+    const startEditAssignee = (a) => {
+      editingAssigneeId.value = a.id;
+      editAssigneeForm.value = { name:a.name, knox_id:a.knox_id||'', ip_address:a.ip_address||'' };
+    };
+    const saveAssignee = async (id) => {
+      const r = await eel.update_assignee(id, editAssigneeForm.value.name, editAssigneeForm.value.knox_id, editAssigneeForm.value.ip_address)();
+      if (r.success) { editingAssigneeId.value=null; await loadAssignees(); }
+      else alert(r.error);
+    };
+    const toggleAssignee = async (a) => {
+      await eel.toggle_assignee(a.id)();
+      await loadAssignees();
+    };
+    const deleteAssignee = async (id) => {
+      if (!confirm('담당자를 삭제하시겠습니까? 처리중인 VOC가 있으면 삭제되지 않습니다.')) return;
+      const r = await eel.delete_assignee(id)();
+      if (r.success) await loadAssignees();
+      else alert(r.error);
+    };
+
+    // ── 배정 관리 ────────────────────────────────────────────────
+    const turnOrder    = ref([]);
+    const rules        = ref([]);
+    const vacations    = ref([]);
+    const showAddRule  = ref(false);
+    const newRule      = ref({ category:'', assignee_id:'', note:'' });
+    const showAddVacation = ref(false);
+    const newVacation  = ref({ assignee_id:'', vacation_date: todayStr(), vacation_type:'연차' });
+
+    const loadAssignment = async () => {
+      const [as, rl, vc] = await Promise.all([
+        eel.get_assignees()(), eel.get_assignment_rules()(), eel.get_vacations()(),
+      ]);
+      assignees.value = as;
+      rules.value     = rl;
+      vacations.value = vc;
+      turnOrder.value = [...as].sort((a,b) => a.turn_order - b.turn_order);
+    };
+
+    const turnOrderMoveUp = (i) => {
+      if (i===0) return;
+      const arr = [...turnOrder.value];
+      [arr[i-1],arr[i]] = [arr[i],arr[i-1]];
+      turnOrder.value = arr;
+    };
+    const turnOrderMoveDown = (i) => {
+      if (i>=turnOrder.value.length-1) return;
+      const arr = [...turnOrder.value];
+      [arr[i],arr[i+1]] = [arr[i+1],arr[i]];
+      turnOrder.value = arr;
+    };
+    const saveTurnOrder = async () => {
+      const orderList = turnOrder.value.map((a,i) => ({ id:a.id, turn_order:i+1 }));
+      await eel.update_turn_order(orderList)();
+      await loadAssignment();
+    };
+
+    const saveRule = async () => {
+      if (!newRule.value.category || !newRule.value.assignee_id) { alert('유형과 담당자를 선택하세요.'); return; }
+      await eel.save_assignment_rule(newRule.value.category, parseInt(newRule.value.assignee_id), newRule.value.note)();
+      newRule.value = { category:'', assignee_id:'', note:'' };
+      showAddRule.value = false;
+      rules.value = await eel.get_assignment_rules()();
+    };
+    const deleteRule = async (id) => {
+      await eel.delete_assignment_rule(id)();
+      rules.value = await eel.get_assignment_rules()();
+    };
+
+    const addVacation = async () => {
+      if (!newVacation.value.assignee_id || !newVacation.value.vacation_date) { alert('담당자와 날짜를 선택하세요.'); return; }
+      const r = await eel.add_vacation(parseInt(newVacation.value.assignee_id), newVacation.value.vacation_date, newVacation.value.vacation_type)();
+      if (r.success) {
+        showAddVacation.value = false;
+        vacations.value = await eel.get_vacations()();
+      } else alert(r.error);
+    };
+    const deleteVacation = async (id) => {
+      await eel.delete_vacation(id)();
+      vacations.value = await eel.get_vacations()();
+    };
+
+    // ── 유형 관리 ────────────────────────────────────────────────
+    const typeGroups     = ref([]);
+    const typeItemsMap   = ref({});
+    const newTypeItem    = ref({});
+    const newTypeItemValue = ref({});
+    const newChildName   = ref({});
+    const newChildValue  = ref({});
+    const editingItemId  = ref(null);
+    const editItemForm   = ref({ name:'', value:'' });
+
+    const getParentItems = (code) => (typeItemsMap.value[code]||[]).filter(x => !x.parent_id);
+    const getChildItems  = (code, parentId) => (typeItemsMap.value[code]||[]).filter(x => x.parent_id === parentId);
+    const getFlatItems   = (code) => (typeItemsMap.value[code]||[]);
+
+    const loadTypes = async () => {
+      typeGroups.value = await eel.get_type_groups()();
+      const pairs = await Promise.all(typeGroups.value.map(g=>eel.get_type_items(g.code)().then(items=>[g.code,items])));
+      const map={};
+      for(const[c,i] of pairs) map[c]=i;
+      typeItemsMap.value = map;
+      typeItems.value    = map;
+    };
+
+    const addParentItem = async (code) => {
+      const name = (newTypeItem.value[code]||'').trim();
+      if (!name) return;
+      await eel.add_type_item(code, name, (newTypeItemValue.value[code]||'').trim())();
+      newTypeItem.value      = {...newTypeItem.value, [code]:''};
+      newTypeItemValue.value = {...newTypeItemValue.value, [code]:''};
+      await loadTypes();
+    };
+    const addChildItem = async (code, parentId) => {
+      const name = (newChildName.value[parentId]||'').trim();
+      if (!name) return;
+      await eel.add_type_item(code, name, (newChildValue.value[parentId]||'').trim(), parentId)();
+      newChildName.value  = {...newChildName.value, [parentId]:''};
+      newChildValue.value = {...newChildValue.value, [parentId]:''};
+      await loadTypes();
+    };
+    const addFlatItem = async (code) => {
+      const name = (newTypeItem.value[code]||'').trim();
+      if (!name) return;
+      await eel.add_type_item(code, name, (newTypeItemValue.value[code]||'').trim())();
+      newTypeItem.value      = {...newTypeItem.value, [code]:''};
+      newTypeItemValue.value = {...newTypeItemValue.value, [code]:''};
+      await loadTypes();
+    };
+    const startEditItem = (item) => {
+      editingItemId.value = item.id;
+      editItemForm.value  = { name: item.name, value: item.value||'' };
+    };
+    const saveEditItem = async (code) => {
+      if (!editItemForm.value.name.trim()) { alert('코드명을 입력하세요.'); return; }
+      await eel.update_type_item(editingItemId.value, editItemForm.value.name, editItemForm.value.value)();
+      editingItemId.value = null;
+      await loadTypes();
+    };
+    const deleteTypeItem = async (code, id) => {
+      if (!confirm('항목을 삭제하시겠습니까?')) return;
+      await eel.delete_type_item(id)();
+      await loadTypes();
+    };
+    const deleteParentItem = async (code, parentId) => {
+      const children = getChildItems(code, parentId);
+      const msg = children.length
+        ? `이 항목을 삭제하면 하위 항목 ${children.length}개도 삭제됩니다. 계속하시겠습니까?`
+        : '이 항목을 삭제하시겠습니까?';
+      if (!confirm(msg)) return;
+      for (const child of children) await eel.delete_type_item(child.id)();
+      await eel.delete_type_item(parentId)();
+      await loadTypes();
+    };
+    const moveItemUp = async (code, idx) => {
+      const items = [...(typeItemsMap.value[code]||[])];
+      if (idx===0) return;
+      [items[idx-1],items[idx]] = [items[idx],items[idx-1]];
+      await eel.update_type_item_order(items.map((x,i)=>({id:x.id,sort_order:i})))();
+      await loadTypes();
+    };
+    const moveItemDown = async (code, idx) => {
+      const items = [...(typeItemsMap.value[code]||[])];
+      if (idx>=items.length-1) return;
+      [items[idx],items[idx+1]] = [items[idx+1],items[idx]];
+      await eel.update_type_item_order(items.map((x,i)=>({id:x.id,sort_order:i})))();
+      await loadTypes();
+    };
+
+    // ── API 설정 ─────────────────────────────────────────────────
+    const apiConfig    = ref({ api_url_pattern:'', api_token:'', api_field_map:[] });
+    const vocColumns   = ref([]);
+    const savingConfig = ref(false);
+    const configSaved  = ref(false);
+
+    const loadApiConfig = async () => {
+      const [cfg, cols] = await Promise.all([eel.get_config()(), eel.get_voc_columns()()]);
+      apiConfig.value = { ...cfg, api_field_map: cfg.api_field_map||[] };
+      vocColumns.value = cols;
+    };
+    const addFieldMapping = () => { apiConfig.value.api_field_map.push({ col:'', path:'' }); };
+    const saveApiConfig = async () => {
+      savingConfig.value = true;
+      const r = await eel.save_config({ ...apiConfig.value })();
+      savingConfig.value = false;
+      if (r.success) { configSaved.value=true; setTimeout(()=>configSaved.value=false,2500); }
+    };
+
+    // ── 메뉴 관리 ────────────────────────────────────────────────
+    const menus         = ref([]);
+    const showAddMenu   = ref(false);
+    const newMenu       = ref({ label:'', section:'', icon_color:'#6366f1', source_type:'file', source_value:'' });
+    const editingMenuId = ref(null);
+    const editMenuForm  = ref({ label:'', section:'', icon_color:'#6366f1', source_type:'file', source_value:'' });
+
+    const loadMenus = async () => { menus.value = await eel.get_custom_menus()(); };
+
+    const addMenu = async () => {
+      if (!newMenu.value.label.trim()) { alert('이름을 입력하세요.'); return; }
+      await eel.add_custom_menu(newMenu.value.label, newMenu.value.icon_color, newMenu.value.source_type, newMenu.value.source_value, newMenu.value.section)();
+      newMenu.value = { label:'', section:'', icon_color:'#6366f1', source_type:'file', source_value:'' };
+      showAddMenu.value = false;
+      await loadMenus(); notifySidebarMenus();
+    };
+    const startEditMenu = (m) => {
+      editingMenuId.value = m.id;
+      editMenuForm.value = { label:m.label, section:m.section||'', icon_color:m.icon_color||'#6366f1', source_type:m.source_type||'file', source_value:m.source_value||'' };
+    };
+    const saveMenu = async (id) => {
+      await eel.update_custom_menu(id, editMenuForm.value.label, editMenuForm.value.icon_color, editMenuForm.value.source_type, editMenuForm.value.source_value, editMenuForm.value.section)();
+      editingMenuId.value = null;
+      await loadMenus(); notifySidebarMenus();
+    };
+    const toggleMenu = async (id) => {
+      await eel.toggle_custom_menu_active(id)();
+      await loadMenus(); notifySidebarMenus();
+    };
+    const deleteMenu = async (id) => {
+      if (!confirm('이 메뉴를 삭제하시겠습니까?')) return;
+      await eel.delete_custom_menu(id)();
+      await loadMenus(); notifySidebarMenus();
+    };
+    const menuMoveUp = (i) => {
+      if (i===0) return;
+      const arr = [...menus.value]; [arr[i-1],arr[i]] = [arr[i],arr[i-1]]; menus.value = arr;
+    };
+    const menuMoveDown = (i) => {
+      if (i>=menus.value.length-1) return;
+      const arr = [...menus.value]; [arr[i],arr[i+1]] = [arr[i+1],arr[i]]; menus.value = arr;
+    };
+    const saveMenuOrder = async () => {
+      await eel.update_custom_menu_order(menus.value.map((m,i)=>({id:m.id,sort_order:i+1})))();
+      await loadMenus(); notifySidebarMenus();
+    };
+
+    // ── VOC 배치처리 ─────────────────────────────────────────
+    const batchItems   = ref([]);
+    const batchRunning = ref(false);
+    const batchError   = ref('');
+    const batchDone    = ref(0);
+
+    const processBatchFile = async (file) => {
+      batchError.value = '';
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        const bytes = new Uint8Array(ev.target.result);
+        let b64 = '';
+        const chunk = 8192;
+        for (let i = 0; i < bytes.length; i += chunk)
+          b64 += String.fromCharCode(...bytes.subarray(i, i + chunk));
+        const result = await eel.parse_voc_numbers_from_excel(file.name, btoa(b64))();
+        if (!result.success) { batchError.value = result.error || '파싱 실패'; return; }
+        batchItems.value  = result.voc_numbers.map(num => ({num, status:'pending', action:'', error:''}));
+        batchDone.value   = 0;
+      };
+      reader.readAsArrayBuffer(file);
+    };
+
+    const onBatchFileChange = (e) => { const f = e.target.files[0]; if (f) processBatchFile(f); };
+    const onBatchFileDrop   = (e) => { const f = e.dataTransfer.files[0]; if (f) processBatchFile(f); };
+
+    const startBatch = async () => {
+      if (batchRunning.value) return;
+      batchRunning.value = true; batchDone.value = 0;
+      for (let i = 0; i < batchItems.value.length; i++) {
+        if (batchItems.value[i].status === 'done') { batchDone.value++; continue; }
+        batchItems.value[i] = {...batchItems.value[i], status:'processing'};
+        const r = await eel.batch_upsert_voc(batchItems.value[i].num)();
+        batchDone.value++;
+        batchItems.value[i] = {...batchItems.value[i],
+          status: r.success ? 'done' : 'failed',
+          action: r.action || '',
+          error:  r.error  || '',
+        };
+      }
+      batchRunning.value = false;
+    };
+
+    const resetBatch = () => {
+      batchItems.value = batchItems.value.map(i => ({...i, status:'pending', action:'', error:''}));
+      batchDone.value = 0;
+    };
+
+    // ── 탭 전환 ───────────────────────────────────────────────────
+    const switchTab = async (id) => {
+      activeTab.value = id;
+      if (id==='assignees') { await loadAssignees(); }
+      if (id==='assignment') { await loadAssignment(); await loadTypeSystemMap().then(m=>typeItems.value=m); }
+      if (id==='types') { await loadTypes(); }
+      if (id==='api') { await loadApiConfig(); }
+      if (id==='menus') { await loadMenus(); }
+    };
+
+    onMounted(async () => {
+      await loadAssignees();
+    });
+
+    return {
+      tabs, activeTab, loading,
+      // 담당자
+      assignees, showAddAssignee, newAssignee, editingAssigneeId, editAssigneeForm,
+      addAssignee, startEditAssignee, saveAssignee, toggleAssignee, deleteAssignee,
+      // 배정
+      turnOrder, rules, vacations, showAddRule, newRule, categoryList,
+      showAddVacation, newVacation,
+      turnOrderMoveUp, turnOrderMoveDown, saveTurnOrder,
+      saveRule, deleteRule, addVacation, deleteVacation,
+      // 유형
+      typeGroups, typeItemsMap, newTypeItem, newTypeItemValue, newChildName, newChildValue,
+      editingItemId, editItemForm,
+      getParentItems, getChildItems, getFlatItems,
+      addParentItem, addChildItem, addFlatItem,
+      startEditItem, saveEditItem, deleteTypeItem, deleteParentItem,
+      moveItemUp, moveItemDown,
+      // API
+      apiConfig, vocColumns, savingConfig, configSaved, addFieldMapping, saveApiConfig,
+      // 메뉴
+      menus, showAddMenu, newMenu, editingMenuId, editMenuForm,
+      addMenu, startEditMenu, saveMenu, toggleMenu, deleteMenu,
+      menuMoveUp, menuMoveDown, saveMenuOrder,
+      // 배치처리
+      batchItems, batchRunning, batchError, batchDone,
+      onBatchFileChange, onBatchFileDrop, startBatch, resetBatch,
+      switchTab, todayStr,
+    };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>

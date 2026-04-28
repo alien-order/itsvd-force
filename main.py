@@ -1,6 +1,6 @@
 import eel
 from backend.db import init_db
-from backend import voc, assignment, scraper, config_manager, image_search, knowledge, board, category as category_mgr, type_manager
+from backend import voc, assignment, scraper, config_manager, image_search, knowledge, board, category as category_mgr, type_manager, menu as menu_mgr
 
 eel.init('web')
 init_db()
@@ -8,8 +8,8 @@ init_db()
 
 # ── VOC ─────────────────────────────────────────────────────────
 @eel.expose
-def get_vocs(status=None, search=None, assignee_id=None, category=None, date_from=None, date_to=None):
-    return voc.get_vocs(status, search, assignee_id, category, date_from, date_to)
+def get_vocs(status=None, search=None, assignee_id=None, category=None, date_from=None, date_to=None, category_parent=None, process_type=None):
+    return voc.get_vocs(status, search, assignee_id, category, date_from, date_to, category_parent, process_type)
 
 @eel.expose
 def get_years():
@@ -61,8 +61,16 @@ def sync_single_voc(voc_id):
     return voc.update_from_sync(voc_id, result['data'])
 
 @eel.expose
-def get_voc_stats(period_type='monthly'):
-    return voc.get_stats(period_type)
+def get_status_summary(assignee_id=None, date_from=None, date_to=None):
+    return voc.get_status_summary(assignee_id, date_from, date_to)
+
+@eel.expose
+def get_voc_stats(period_type='monthly', date_from=None, date_to=None):
+    return voc.get_stats(period_type, date_from, date_to)
+
+@eel.expose
+def get_assignee_stats(date_from=None, date_to=None):
+    return voc.get_assignee_stats(date_from, date_to)
 
 
 # ── 배정 ─────────────────────────────────────────────────────────
@@ -71,8 +79,20 @@ def get_assignees():
     return assignment.get_assignees()
 
 @eel.expose
-def add_assignee(name):
-    return assignment.add_assignee(name)
+def add_assignee(name, knox_id='', ip_address=''):
+    return assignment.add_assignee(name, knox_id, ip_address)
+
+@eel.expose
+def delete_assignee(assignee_id):
+    return assignment.delete_assignee(assignee_id)
+
+@eel.expose
+def update_assignee(assignee_id, name, knox_id='', ip_address=''):
+    return assignment.update_assignee(assignee_id, name, knox_id, ip_address)
+
+@eel.expose
+def get_assignee_by_ip(ip):
+    return assignment.get_assignee_by_ip(ip)
 
 @eel.expose
 def toggle_assignee(assignee_id):
@@ -139,6 +159,10 @@ def get_config():
 @eel.expose
 def save_config(data):
     return config_manager.save_config(data)
+
+@eel.expose
+def get_voc_columns():
+    return config_manager.get_voc_columns()
 
 
 # ── 이미지 ────────────────────────────────────────────────────────
@@ -287,8 +311,12 @@ def get_type_items(group_code):
     return type_manager.get_items(group_code)
 
 @eel.expose
-def add_type_item(group_code, name, value=''):
-    return type_manager.add_item(group_code, name, value)
+def add_type_item(group_code, name, value='', parent_id=None):
+    return type_manager.add_item(group_code, name, value, parent_id)
+
+@eel.expose
+def update_type_item(item_id, name, value=''):
+    return type_manager.update_item(item_id, name, value)
 
 @eel.expose
 def delete_type_item(item_id):
@@ -297,6 +325,97 @@ def delete_type_item(item_id):
 @eel.expose
 def update_type_item_order(order_list):
     return type_manager.update_item_order(order_list)
+
+
+# ── 커스텀 메뉴 ──────────────────────────────────────────────────
+@eel.expose
+def get_custom_menus():
+    return menu_mgr.get_menus()
+
+@eel.expose
+def add_custom_menu(label, icon_color='#6366f1', source_type='url', source_value='', section=''):
+    return menu_mgr.add_menu(label, icon_color, source_type, source_value, section)
+
+@eel.expose
+def update_custom_menu(menu_id, label, icon_color, source_type, source_value, section=''):
+    return menu_mgr.update_menu(menu_id, label, icon_color, source_type, source_value, section)
+
+@eel.expose
+def delete_custom_menu(menu_id):
+    return menu_mgr.delete_menu(menu_id)
+
+@eel.expose
+def toggle_custom_menu_active(menu_id):
+    return menu_mgr.toggle_menu(menu_id)
+
+@eel.expose
+def update_custom_menu_order(order_list):
+    return menu_mgr.update_menu_order(order_list)
+
+
+# ── VOC 배치처리 ─────────────────────────────────────────────
+@eel.expose
+def parse_voc_numbers_from_excel(filename, b64_data):
+    import base64, io, os as _os
+    try:
+        data = base64.b64decode(b64_data)
+        ext  = _os.path.splitext(filename)[1].lower()
+        voc_nums = []
+        if ext in ('.xlsx', '.xls'):
+            try:
+                import openpyxl
+                wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+                ws = wb.active
+                for row in ws.iter_rows(values_only=True):
+                    if row and row[0] is not None:
+                        val = str(row[0]).strip()
+                        if val:
+                            voc_nums.append(val)
+                wb.close()
+            except ImportError:
+                return {'success': False, 'error': 'openpyxl 미설치. pip install openpyxl 후 재시작하세요.'}
+        elif ext == '.csv':
+            import csv
+            text = data.decode('utf-8-sig', errors='replace')
+            for row in csv.reader(io.StringIO(text)):
+                if row and row[0].strip():
+                    voc_nums.append(row[0].strip())
+        else:
+            text = data.decode('utf-8-sig', errors='replace')
+            for line in text.splitlines():
+                val = line.strip().split(',')[0].strip()
+                if val:
+                    voc_nums.append(val)
+        # Remove header if first value has no digits
+        if voc_nums and not any(c.isdigit() for c in voc_nums[0]):
+            voc_nums = voc_nums[1:]
+        return {'success': True, 'voc_numbers': voc_nums}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+@eel.expose
+def batch_upsert_voc(voc_number):
+    voc_number = str(voc_number).strip()
+    if not voc_number:
+        return {'success': False, 'error': '번호 없음', 'action': 'skip'}
+    from backend.db import get_conn as _gc
+    with _gc() as conn:
+        row = conn.execute('SELECT id FROM vocs WHERE voc_number=?', (voc_number,)).fetchone()
+    if row:
+        result = scraper.fetch_voc(voc_number)
+        if not result['success']:
+            return {**result, 'action': 'failed'}
+        update_result = voc.update_from_sync(row['id'], result['data'])
+        return {**update_result, 'action': 'updated', 'voc_number': voc_number}
+    else:
+        result = scraper.fetch_voc(voc_number)
+        if not result['success']:
+            return {**result, 'action': 'failed'}
+        data = result['data']
+        data['voc_number'] = voc_number
+        create_result = voc.create_voc(data)
+        return {**create_result, 'action': 'created', 'voc_number': voc_number}
 
 
 if __name__ == '__main__':

@@ -10,17 +10,61 @@ def get_assignees():
     return [dict(r) for r in rows]
 
 
-def add_assignee(name):
-    name = name.strip()
+def add_assignee(name, knox_id='', ip_address=''):
+    name      = name.strip()
+    knox_id   = (knox_id or '').strip() or None
+    ip_address = (ip_address or '').strip()
     if not name:
         return {'success': False, 'error': '이름을 입력하세요.'}
     try:
         with get_conn() as conn:
             max_order = conn.execute('SELECT COALESCE(MAX(turn_order),0) FROM assignees').fetchone()[0]
-            conn.execute('INSERT INTO assignees (name, turn_order) VALUES (?, ?)', (name, max_order + 1))
+            conn.execute(
+                'INSERT INTO assignees (name, turn_order, knox_id, ip_address) VALUES (?,?,?,?)',
+                (name, max_order + 1, knox_id, ip_address)
+            )
         return {'success': True}
     except Exception:
-        return {'success': False, 'error': '이미 존재하는 담당자입니다.'}
+        return {'success': False, 'error': '이미 존재하는 이름 또는 KNOX ID입니다.'}
+
+
+def delete_assignee(assignee_id):
+    with get_conn() as conn:
+        active = conn.execute(
+            "SELECT COUNT(*) FROM vocs WHERE assignee_id=? AND status IN ('open','in_progress')",
+            (assignee_id,)
+        ).fetchone()[0]
+        if active > 0:
+            return {'success': False, 'error': f'처리중인 VOC가 {active}건 있어 삭제할 수 없습니다.'}
+        conn.execute('DELETE FROM assignees WHERE id=?', (assignee_id,))
+    return {'success': True}
+
+
+def update_assignee(assignee_id, name, knox_id='', ip_address=''):
+    name      = (name or '').strip()
+    knox_id   = (knox_id or '').strip() or None
+    ip_address = (ip_address or '').strip()
+    if not name:
+        return {'success': False, 'error': '이름을 입력하세요.'}
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                'UPDATE assignees SET name=?, knox_id=?, ip_address=? WHERE id=?',
+                (name, knox_id, ip_address, assignee_id)
+            )
+        return {'success': True}
+    except Exception:
+        return {'success': False, 'error': 'KNOX ID가 중복됩니다.'}
+
+
+def get_assignee_by_ip(ip):
+    if not ip:
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM assignees WHERE ip_address=? AND active=1", (ip,)
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def toggle_assignee(assignee_id):

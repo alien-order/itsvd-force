@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>공유문서</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="../css/style.css">
+  <script type="text/javascript" src="/eel.js"></script>
+  <link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor.min.css">
+</head>
+<body style="margin:0;height:100%;overflow:hidden">
+<div id="app" style="display:flex;height:100%;overflow:hidden;background:#f8fafc">
+
+  <!-- ══ 미들 패널 ══ -->
+  <div class="middle-panel">
+    <div class="mp-header">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="mp-title">공유문서</span>
+        <span class="mp-count">{{ list.length }}건</span>
+        <button @click="startNew" class="btn btn-primary text-xs px-3 py-1.5 ml-auto">+ 새 문서</button>
+      </div>
+      <input v-model="filterSearch" @input="debouncedLoad" type="text" placeholder="제목, 내용 검색" class="inp text-xs py-1.5 mb-1.5">
+      <select v-model="filterCategory" @change="loadList" class="inp text-xs py-1.5">
+        <option value="all">전체 분류</option>
+        <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
+      </select>
+    </div>
+
+    <div class="flex-1 overflow-y-auto">
+      <div v-if="!list.length" class="empty-state h-40">문서가 없습니다</div>
+      <div v-for="p in list" :key="p.id"
+        :class="['board-item', selected?.id===p.id?'selected':'']" @click="openPost(p)">
+        <div class="flex items-start gap-2">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-0.5">
+              <div class="text-sm font-medium text-slate-800 truncate flex-1">{{ p.title }}</div>
+              <span v-if="p.file_count>0" class="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full shrink-0">첨부 {{ p.file_count }}</span>
+            </div>
+            <div class="flex items-center gap-2 mt-0.5">
+              <span v-if="p.category" class="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{{ p.category }}</span>
+              <span class="text-xs text-slate-300 ml-auto">{{ p.updated_at?.slice(0,10) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 리사이즈 핸들 -->
+  <div class="resize-handle" @mousedown.prevent="startResize"></div>
+
+  <!-- ══ 우측 패널 ══ -->
+  <div class="right-panel" :class="editMode?'overflow-hidden':''">
+    <!-- 편집 모드 -->
+    <template v-if="editMode">
+      <div class="bg-white border-b border-slate-200 px-5 py-3 flex items-center gap-3 shrink-0">
+        <span class="text-sm font-semibold text-slate-700">{{ isNew ? '새 문서 등록' : '문서 편집' }}</span>
+        <div class="flex gap-2 ml-auto">
+          <button @click="savePost" :disabled="saving" class="btn btn-primary text-xs px-4 disabled:opacity-40">
+            {{ saving ? '저장 중...' : '저장' }}
+          </button>
+          <button @click="cancelEdit" class="btn btn-secondary text-xs px-3">취소</button>
+        </div>
+      </div>
+      <div class="flex-1 overflow-y-auto p-5 space-y-3" style="height:calc(100vh - 57px)">
+        <input v-model="form.title" type="text" placeholder="제목 *" class="inp text-sm">
+        <div class="flex gap-2">
+          <input v-model="form.category" type="text" list="cat-list" placeholder="분류 (입력 또는 선택)" class="inp text-sm flex-1">
+          <datalist id="cat-list">
+            <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
+          </datalist>
+        </div>
+        <div class="editor-wrap" style="height:calc(100vh - 310px)">
+          <div id="editor-mount"></div>
+        </div>
+        <!-- 파일 첨부 (저장 후에만 가능) -->
+        <div v-if="!isNew" class="card p-4">
+          <h3 class="text-xs font-semibold text-slate-500 mb-2">파일 첨부</h3>
+          <div class="flex gap-2 mb-3">
+            <input type="file" multiple @change="onFileSelect" class="inp text-xs py-1.5 flex-1">
+            <button @click="uploadFiles" :disabled="!pendingFiles.length||uploading" class="btn btn-secondary text-xs px-3 disabled:opacity-40">
+              {{ uploading ? '업로드 중...' : '업로드' }}
+            </button>
+          </div>
+          <div v-if="form.files?.length" class="flex gap-2 flex-wrap">
+            <div v-for="f in form.files" :key="f.id" class="file-chip">
+              <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+              <a :href="'/uploads/'+f.saved_name" target="_blank" class="hover:text-indigo-600 truncate" style="max-width:120px">{{ f.original_name }}</a>
+              <button @click="deleteFile(f.id)" class="text-slate-300 hover:text-red-500 ml-0.5">×</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- 보기 모드 -->
+    <template v-else-if="selected">
+      <div class="bg-white border-b border-slate-200 px-5 py-3">
+        <div class="flex items-start gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1">
+              <span v-if="selected.category" class="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{{ selected.category }}</span>
+              <span class="text-xs text-slate-300 ml-auto">{{ selected.updated_at?.slice(0,10) }}</span>
+            </div>
+            <h2 class="text-lg font-semibold text-slate-900 leading-tight">{{ selected.title }}</h2>
+          </div>
+          <div class="flex gap-2 shrink-0">
+            <button @click="startEdit" class="btn btn-secondary text-xs px-3">편집</button>
+            <button @click="deletePost" class="btn btn-danger text-xs px-3">삭제</button>
+          </div>
+        </div>
+      </div>
+      <div class="p-6 space-y-5">
+        <div class="card p-6">
+          <div v-html="renderContent(selected.content)" class="text-sm text-slate-700 leading-relaxed prose-content"></div>
+        </div>
+        <!-- 첨부 파일 -->
+        <div v-if="selectedFiles.length" class="card p-4">
+          <h3 class="text-xs font-semibold text-slate-500 mb-3">첨부 파일 ({{ selectedFiles.length }})</h3>
+          <div class="flex gap-2 flex-wrap">
+            <div v-for="f in selectedFiles" :key="f.id" class="file-chip">
+              <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+              <a :href="'/uploads/'+f.saved_name" target="_blank" class="hover:text-indigo-600 truncate" style="max-width:150px">{{ f.original_name }}</a>
+              <span class="text-slate-300 text-xs">{{ formatSize(f.file_size) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <div v-else class="empty-state h-full flex-col gap-3 text-slate-400">
+      <svg width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="text-slate-200"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      <span>목록에서 문서를 선택하세요</span>
+    </div>
+  </div>
+
+</div>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
+<script src="../js/common.js"></script>
+<script>
+const { createApp, ref, onMounted, nextTick } = Vue;
+createApp({
+  setup() {
+    const { mpWidth, applyWidth, startResize } = useMpResize();
+
+    const list           = ref([]);
+    const categories     = ref([]);
+    const filterSearch   = ref('');
+    const filterCategory = ref('all');
+    let searchTimer = null;
+
+    const selected      = ref(null);
+    const selectedFiles = ref([]);
+    const editMode      = ref(false);
+    const isNew         = ref(false);
+    const saving        = ref(false);
+    const uploading     = ref(false);
+    const pendingFiles  = ref([]);
+    const form = ref({ title:'', content:'', category:'', files:[] });
+    let editor = null;
+
+    const debouncedLoad = () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(loadList, 300);
+    };
+
+    const loadList = async () => {
+      list.value = await eel.get_board_posts(
+        filterSearch.value || null,
+        filterCategory.value === 'all' ? null : filterCategory.value
+      )();
+      categories.value = await eel.get_board_categories()();
+    };
+
+    const openPost = async (p) => {
+      const detail = await eel.get_board_post(p.id)();
+      selected.value = detail;
+      selectedFiles.value = detail?.files || [];
+      editMode.value = false;
+    };
+
+    const startNew = async () => {
+      selected.value = null;
+      isNew.value = true;
+      form.value = { title:'', content:'', category:'', files:[] };
+      pendingFiles.value = [];
+      editMode.value = true;
+      await nextTick();
+      mountEditor('');
+    };
+
+    const startEdit = async () => {
+      if (!selected.value) return;
+      isNew.value = false;
+      form.value = {
+        title: selected.value.title,
+        content: selected.value.content,
+        category: selected.value.category || '',
+        files: selected.value.files || [],
+      };
+      pendingFiles.value = [];
+      editMode.value = true;
+      await nextTick();
+      mountEditor(selected.value.content || '');
+    };
+
+    const mountEditor = (initialValue) => {
+      if (editor) { try { editor.destroy(); } catch(e){} editor = null; }
+      const el = document.getElementById('editor-mount');
+      if (!el) return;
+      editor = new toastui.Editor({
+        el,
+        height: '100%',
+        initialEditType: 'wysiwyg',
+        previewStyle: 'vertical',
+        initialValue,
+        toolbarItems: [
+          ['heading','bold','italic','strike'],
+          ['hr','quote'],
+          ['ul','ol','task'],
+          ['table','link'],
+          ['code','codeblock'],
+        ],
+      });
+    };
+
+    const cancelEdit = () => {
+      editMode.value = false;
+      if (editor) { try { editor.destroy(); } catch(e){} editor = null; }
+    };
+
+    const savePost = async () => {
+      if (!form.value.title.trim()) { alert('제목을 입력하세요.'); return; }
+      saving.value = true;
+      const content = editor ? editor.getHTML() : form.value.content;
+      const data = { title: form.value.title, content, category: form.value.category };
+      let result;
+      if (isNew.value) {
+        result = await eel.create_board_post(data)();
+      } else {
+        result = await eel.update_board_post(selected.value.id, data)();
+        if (result.success) result.id = selected.value.id;
+      }
+      saving.value = false;
+      if (result.success) {
+        if (editor) { try { editor.destroy(); } catch(e){} editor = null; }
+        editMode.value = false;
+        await loadList();
+        const foundId = result.id || selected.value?.id;
+        const found = list.value.find(p=>p.id===foundId);
+        if (found) await openPost(found);
+      } else alert(result.error || '저장 실패');
+    };
+
+    const deletePost = async () => {
+      if (!selected.value || !confirm('이 문서를 삭제하시겠습니까?')) return;
+      await eel.delete_board_post(selected.value.id)();
+      selected.value = null; selectedFiles.value = [];
+      await loadList();
+    };
+
+    const onFileSelect = (e) => {
+      pendingFiles.value = Array.from(e.target.files);
+    };
+
+    const uploadFiles = async () => {
+      if (!selected.value || !pendingFiles.value.length) return;
+      uploading.value = true;
+      for (const file of pendingFiles.value) {
+        const b64 = await new Promise((res) => {
+          const reader = new FileReader();
+          reader.onload = () => res(reader.result.split(',')[1]);
+          reader.readAsDataURL(file);
+        });
+        await eel.upload_board_file(selected.value.id, file.name, b64)();
+      }
+      uploading.value = false;
+      pendingFiles.value = [];
+      const detail = await eel.get_board_post(selected.value.id)();
+      selected.value = detail;
+      form.value.files = detail?.files || [];
+    };
+
+    const deleteFile = async (fileId) => {
+      await eel.delete_board_file(fileId)();
+      const detail = await eel.get_board_post(selected.value.id)();
+      selected.value = detail;
+      form.value.files = detail?.files || [];
+    };
+
+    onMounted(async () => {
+      applyWidth(mpWidth.value);
+      await loadList();
+    });
+
+    return {
+      startResize,
+      list, categories, filterSearch, filterCategory,
+      selected, selectedFiles, editMode, isNew, saving, uploading, pendingFiles,
+      form,
+      debouncedLoad, loadList, openPost, startNew, startEdit, cancelEdit, savePost, deletePost,
+      onFileSelect, uploadFiles, deleteFile,
+      renderContent, formatSize,
+    };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>

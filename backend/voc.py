@@ -15,6 +15,7 @@ def create_voc(data):
     title             = data.get('title', '').strip()
     content           = data.get('content', '').strip()
     category          = data.get('category', '').strip()
+    process_type      = data.get('process_type', '').strip()
     priority          = data.get('priority', 'normal')
     voc_number        = data.get('voc_number', '').strip()
     requester         = data.get('requester', '').strip()
@@ -36,9 +37,9 @@ def create_voc(data):
     with get_conn() as conn:
         cur = conn.execute(
             '''INSERT INTO vocs
-               (title, content, category, priority, assignee_id, voc_number, requester, due_date)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-            (title, content, category, priority, assignee_id, voc_number, requester, due_date)
+               (title, content, category, priority, assignee_id, voc_number, requester, due_date, process_type)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            (title, content, category, priority, assignee_id, voc_number, requester, due_date, process_type)
         )
         voc_id = cur.lastrowid
 
@@ -72,7 +73,7 @@ def create_voc(data):
     return {'success': True, 'voc': dict(row), 'assign_info': assign_result}
 
 
-def get_vocs(status=None, search=None, assignee_id=None, category=None, date_from=None, date_to=None):
+def get_vocs(status=None, search=None, assignee_id=None, category=None, date_from=None, date_to=None, category_parent=None, process_type=None):
     query = '''
         SELECT v.*, a.name as assignee_name
         FROM vocs v LEFT JOIN assignees a ON v.assignee_id = a.id
@@ -102,6 +103,22 @@ def get_vocs(status=None, search=None, assignee_id=None, category=None, date_fro
     if category and category != 'all':
         query += ' AND v.category = ?'
         params.append(category)
+    elif category_parent and category_parent != 'all':
+        query += '''
+            AND v.category IN (
+                SELECT ti.name FROM type_items ti
+                WHERE ti.group_code='category' AND (
+                    ti.name=? OR ti.parent_id=(
+                        SELECT id FROM type_items WHERE group_code='category' AND name=? AND parent_id IS NULL
+                    )
+                )
+            )
+        '''
+        params.extend([category_parent, category_parent])
+
+    if process_type and process_type != 'all':
+        query += ' AND v.process_type = ?'
+        params.append(process_type)
 
     if assignee_id and assignee_id != 'all':
         if assignee_id == 'unassigned':
@@ -193,11 +210,40 @@ def get_notes(voc_id):
     return [dict(r) for r in rows]
 
 
-def get_stats(period_type='monthly'):
+def get_status_summary(assignee_id=None, date_from=None, date_to=None):
+    query = 'SELECT status, COUNT(*) as cnt FROM vocs WHERE 1=1'
+    params = []
+    if assignee_id and assignee_id != 'all':
+        if assignee_id == 'unassigned':
+            query += ' AND assignee_id IS NULL'
+        else:
+            query += ' AND assignee_id = ?'
+            params.append(int(assignee_id))
+    if date_from:
+        query += ' AND DATE(created_at) >= ?'
+        params.append(date_from)
+    if date_to:
+        query += ' AND DATE(created_at) <= ?'
+        params.append(date_to)
+    query += ' GROUP BY status'
+    with get_conn() as conn:
+        rows = conn.execute(query, params).fetchall()
+    by_status = {r['status']: r['cnt'] for r in rows}
+    return {'total': sum(by_status.values()), 'by_status': by_status}
+
+
+def get_stats(period_type='monthly', date_from=None, date_to=None):
     if period_type == 'monthly':
         period_sql = "strftime('%Y-%m', created_at)"
     else:
         period_sql = "strftime('%Y-W%W', created_at)"
+
+    where, params = [], []
+    if date_from:
+        where.append("DATE(created_at) >= ?"); params.append(date_from)
+    if date_to:
+        where.append("DATE(created_at) <= ?"); params.append(date_to)
+    where_clause = ("WHERE " + " AND ".join(where)) if where else ""
 
     with get_conn() as conn:
         rows = conn.execute(f'''
@@ -205,9 +251,10 @@ def get_stats(period_type='monthly'):
                    COALESCE(NULLIF(TRIM(category), ''), '기타') as cat,
                    COUNT(*) as cnt
             FROM vocs
+            {where_clause}
             GROUP BY period, cat
             ORDER BY period DESC, cnt DESC
-        ''').fetchall()
+        ''', params).fetchall()
 
     from collections import OrderedDict
     periods = OrderedDict()
@@ -219,6 +266,47 @@ def get_stats(period_type='monthly'):
         periods[p]['categories'].append({'category': r['cat'], 'count': r['cnt']})
 
     return list(periods.values())
+
+
+def get_assignee_stats(date_from=None, date_to=None):
+    where, params = [], []
+    if date_from:
+        where.append("DATE(v.created_at) >= ?"); params.append(date_from)
+    if date_to:
+        where.append("DATE(v.created_at) <= ?"); params.append(date_to)
+    extra = ("AND " + " AND ".join(where)) if where else ""
+
+    with get_conn() as conn:
+        asgns = conn.execute(
+            'SELECT id, name, active FROM assignees ORDER BY turn_order ASC, name ASC'
+        ).fetchall()
+        rows = conn.execute(f'''
+            SELECT v.assignee_id, v.status, COUNT(*) as cnt
+            FROM vocs v
+            WHERE v.assignee_id IS NOT NULL {extra}
+            GROUP BY v.assignee_id, v.status
+        ''', params).fetchall()
+
+    counts = {}
+    all_statuses = []
+    seen_statuses = set()
+    for r in rows:
+        aid = r['assignee_id']
+        if aid not in counts:
+            counts[aid] = {}
+        counts[aid][r['status']] = r['cnt']
+        if r['status'] not in seen_statuses:
+            seen_statuses.add(r['status'])
+            all_statuses.append(r['status'])
+
+    result = []
+    for a in asgns:
+        d = dict(a)
+        d['status_counts'] = counts.get(a['id'], {})
+        d['total'] = sum(d['status_counts'].values())
+        result.append(d)
+
+    return {'assignees': result, 'all_statuses': all_statuses}
 
 
 def sync_statuses():
@@ -244,12 +332,18 @@ def sync_statuses():
 
 
 def update_from_sync(voc_id, data):
+    _EXCLUDE = {'id', 'created_at', 'updated_at', 'assignee_id', 'images'}
+    with get_conn() as conn:
+        col_rows  = conn.execute('PRAGMA table_info(vocs)').fetchall()
+        valid_cols = {r['name'] for r in col_rows}
+
     fields, params = [], []
-    for key in ('title', 'content', 'requester', 'due_date'):
-        val = (data.get(key) or '').strip()
-        if val:
-            fields.append(f'{key} = ?')
-            params.append(val)
+    for key, val in data.items():
+        if key in _EXCLUDE or key not in valid_cols:
+            continue
+        fields.append(f'{key} = ?')
+        params.append(str(val or '').strip())
+
     if not fields:
         return {'success': False, 'error': '업데이트할 데이터가 없습니다.'}
     params.append(voc_id)
