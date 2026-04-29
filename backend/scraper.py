@@ -75,7 +75,6 @@ def fetch_voc(voc_number):
     # ── 단계 데이터 추출 (vocInfoList)
     list_path        = config.get('api_list_path', '').strip()
     child_field_map  = _normalize_field_map(config.get('api_child_field_map', []))
-    stage_status_col = (config.get('api_stage_status_col', '') or 'stage_status').strip()
 
     stage_list = _extract_list(json_data, list_path) if list_path else []
     stages = []
@@ -91,13 +90,13 @@ def fetch_voc(voc_number):
             stage_data[col] = _extract_json(stage_item, json_path)
 
         uppervocno   = str(stage_item.get('uppervocno', '') or '')
-        stage_status = str(stage_data.get(stage_status_col, '') or '')
+        status_code  = str(stage_item.get('vocstatuscode', '') or '')
 
         stages.append({
-            'stage_index':  i,
-            'uppervocno':   uppervocno,
-            'stage_status': stage_status,
-            'stage_data':   stage_data,
+            'stage_index':   i,
+            'uppervocno':    uppervocno,
+            'vocstatuscode': status_code,
+            'stage_data':    stage_data,
         })
 
     if not any(v for k, v in data.items() if k != 'images') and not stages:

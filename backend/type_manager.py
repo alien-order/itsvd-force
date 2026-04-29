@@ -56,19 +56,28 @@ def add_item(group_code, name, value='', parent_id=None):
     if not name:
         return {'success': False, 'error': '이름을 입력하세요.'}
     parent_id = int(parent_id) if parent_id else None
-    try:
-        with get_conn() as conn:
-            max_order = conn.execute(
-                'SELECT COALESCE(MAX(sort_order),0) FROM type_items WHERE group_code=? AND (parent_id IS ? OR parent_id=?)',
-                (group_code, parent_id, parent_id)
-            ).fetchone()[0]
-            conn.execute(
-                'INSERT INTO type_items (group_code, name, value, sort_order, parent_id) VALUES (?,?,?,?,?)',
-                (group_code, name, value, max_order + 1, parent_id)
-            )
-        return {'success': True}
-    except Exception:
-        return {'success': False, 'error': '이미 존재하는 항목입니다.'}
+    with get_conn() as conn:
+        if parent_id is None:
+            existing = conn.execute(
+                'SELECT id FROM type_items WHERE group_code=? AND name=? AND parent_id IS NULL',
+                (group_code, name)
+            ).fetchone()
+        else:
+            existing = conn.execute(
+                'SELECT id FROM type_items WHERE group_code=? AND name=? AND parent_id=?',
+                (group_code, name, parent_id)
+            ).fetchone()
+        if existing:
+            return {'success': False, 'error': '같은 위치에 동일한 이름이 있습니다.'}
+        max_order = conn.execute(
+            'SELECT COALESCE(MAX(sort_order),0) FROM type_items WHERE group_code=? AND (parent_id IS ? OR parent_id=?)',
+            (group_code, parent_id, parent_id)
+        ).fetchone()[0]
+        conn.execute(
+            'INSERT INTO type_items (group_code, name, value, sort_order, parent_id) VALUES (?,?,?,?,?)',
+            (group_code, name, value, max_order + 1, parent_id)
+        )
+    return {'success': True}
 
 
 def update_item(item_id, name, value=''):

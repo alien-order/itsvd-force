@@ -19,11 +19,7 @@
         <span class="mp-count">{{ list.length }}건</span>
         <button @click="startNew" class="btn btn-primary text-xs px-3 py-1.5 ml-auto">+ 새 문서</button>
       </div>
-      <input v-model="filterSearch" @input="debouncedLoad" type="text" placeholder="제목, 내용 검색" class="inp text-xs py-1.5 mb-1.5">
-      <select v-model="filterCategory" @change="loadList" class="inp text-xs py-1.5">
-        <option value="all">전체 분류</option>
-        <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
-      </select>
+      <input v-model="filterSearch" @input="debouncedLoad" type="text" placeholder="제목, 내용 검색" class="inp text-xs py-1.5">
     </div>
 
     <div class="flex-1 overflow-y-auto">
@@ -37,7 +33,6 @@
               <span v-if="p.file_count>0" class="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full shrink-0">첨부 {{ p.file_count }}</span>
             </div>
             <div class="flex items-center gap-2 mt-0.5">
-              <span v-if="p.category" class="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">{{ p.category }}</span>
               <span class="text-xs text-slate-300 ml-auto">{{ p.updated_at?.slice(0,10) }}</span>
             </div>
           </div>
@@ -64,12 +59,6 @@
       </div>
       <div class="flex-1 overflow-y-auto p-5 space-y-3" style="height:calc(100vh - 57px)">
         <input v-model="form.title" type="text" placeholder="제목 *" class="inp text-sm">
-        <div class="flex gap-2">
-          <input v-model="form.category" type="text" list="cat-list" placeholder="분류 (입력 또는 선택)" class="inp text-sm flex-1">
-          <datalist id="cat-list">
-            <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
-          </datalist>
-        </div>
         <div class="editor-wrap" style="height:calc(100vh - 310px)">
           <div id="editor-mount"></div>
         </div>
@@ -99,7 +88,6 @@
         <div class="flex items-start gap-3">
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 mb-1">
-              <span v-if="selected.category" class="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{{ selected.category }}</span>
               <span class="text-xs text-slate-300 ml-auto">{{ selected.updated_at?.slice(0,10) }}</span>
             </div>
             <h2 class="text-lg font-semibold text-slate-900 leading-tight">{{ selected.title }}</h2>
@@ -144,10 +132,8 @@ createApp({
   setup() {
     const { mpWidth, applyWidth, startResize } = useMpResize();
 
-    const list           = ref([]);
-    const categories     = ref([]);
-    const filterSearch   = ref('');
-    const filterCategory = ref('all');
+    const list         = ref([]);
+    const filterSearch = ref('');
     let searchTimer = null;
 
     const selected      = ref(null);
@@ -166,11 +152,7 @@ createApp({
     };
 
     const loadList = async () => {
-      list.value = await eel.get_board_posts(
-        filterSearch.value || null,
-        filterCategory.value === 'all' ? null : filterCategory.value
-      )();
-      categories.value = await eel.get_board_categories()();
+      list.value = await eel.get_board_posts(filterSearch.value || null, null)();
     };
 
     const openPost = async (p) => {
@@ -183,7 +165,7 @@ createApp({
     const startNew = async () => {
       selected.value = null;
       isNew.value = true;
-      form.value = { title:'', content:'', category:'', files:[] };
+      form.value = { title:'', content:'', files:[] };
       pendingFiles.value = [];
       editMode.value = true;
       await nextTick();
@@ -196,7 +178,6 @@ createApp({
       form.value = {
         title: selected.value.title,
         content: selected.value.content,
-        category: selected.value.category || '',
         files: selected.value.files || [],
       };
       pendingFiles.value = [];
@@ -234,7 +215,7 @@ createApp({
       if (!form.value.title.trim()) { alert('제목을 입력하세요.'); return; }
       saving.value = true;
       const content = editor ? editor.getHTML() : form.value.content;
-      const data = { title: form.value.title, content, category: form.value.category };
+      const data = { title: form.value.title, content, category: '' };
       let result;
       if (isNew.value) {
         result = await eel.create_board_post(data)();
@@ -296,7 +277,7 @@ createApp({
 
     return {
       startResize,
-      list, categories, filterSearch, filterCategory,
+      list, filterSearch,
       selected, selectedFiles, editMode, isNew, saving, uploading, pendingFiles,
       form,
       debouncedLoad, loadList, openPost, startNew, startEdit, cancelEdit, savePost, deletePost,

@@ -21,15 +21,19 @@
       </div>
       <input v-model="filterSearch" @input="debouncedLoad" type="text" placeholder="제목, 내용, 태그 검색" class="inp text-xs py-1.5 mb-1.5">
       <div class="flex gap-1.5">
-        <select v-model="filterCategory" @change="loadList" class="inp text-xs py-1.5 flex-1">
-          <option value="all">전체 유형</option>
-          <option v-for="c in categoryList" :key="c.id" :value="c.name">{{ c.name }}</option>
+        <select v-model="filterCategory" @change="onFilterCatChange" class="inp text-xs py-1.5 flex-1">
+          <option value="all">전체 업무유형</option>
+          <option v-for="c in parentCategoryList" :key="c.id" :value="c.name">{{ c.name }}</option>
         </select>
-        <select v-model="filterProcessType" @change="loadList" class="inp text-xs py-1.5 flex-1">
-          <option value="all">전체 처리유형</option>
-          <option v-for="p in processTypeList" :key="p.id" :value="p.name">{{ p.name }}</option>
+        <select v-model="filterSubCategory" @change="loadList" class="inp text-xs py-1.5 flex-1">
+          <option value="all">전체 유형</option>
+          <option v-for="c in filterChildCategoryList" :key="c.id" :value="c.name">{{ c.name }}</option>
         </select>
       </div>
+      <select v-model="filterProcessType" @change="loadList" class="inp text-xs py-1.5">
+        <option value="all">전체 VOC유형</option>
+        <option v-for="p in processTypeList" :key="p.id" :value="p.name">{{ p.name }}</option>
+      </select>
     </div>
 
     <div class="flex-1 overflow-y-auto">
@@ -42,6 +46,7 @@
             <div class="flex items-center gap-2 mt-0.5 flex-wrap">
               <span v-if="k.category" class="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full">{{ k.category }}</span>
               <span v-if="k.process_type" class="text-xs bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded-full">{{ k.process_type }}</span>
+              <span v-if="k.voc_type" class="text-xs bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded-full">{{ k.voc_type }}</span>
               <span v-if="k.tags" class="text-xs text-slate-400 truncate">{{ k.tags }}</span>
             </div>
             <div class="text-xs text-slate-300 mt-0.5">{{ k.updated_at?.slice(0,10) }}</div>
@@ -70,12 +75,16 @@
       <div class="flex-1 overflow-y-auto p-5 space-y-3" style="height:calc(100vh - 57px)">
         <input v-model="form.title" type="text" placeholder="제목 *" class="inp text-sm">
         <div class="flex gap-2">
-          <select v-model="form.category" class="inp text-sm flex-1">
+          <select v-model="form.category" @change="onFormCatChange" class="inp text-sm flex-1">
+            <option value="">업무유형 없음</option>
+            <option v-for="c in parentCategoryList" :key="c.id" :value="c.name">{{ c.name }}</option>
+          </select>
+          <select v-model="form.sub_category" class="inp text-sm flex-1">
             <option value="">유형 없음</option>
-            <option v-for="c in categoryList" :key="c.id" :value="c.name">{{ c.name }}</option>
+            <option v-for="c in formChildCategoryList" :key="c.id" :value="c.name">{{ c.name }}</option>
           </select>
           <select v-model="form.process_type" class="inp text-sm flex-1">
-            <option value="">처리유형 없음</option>
+            <option value="">VOC유형 없음</option>
             <option v-for="p in processTypeList" :key="p.id" :value="p.name">{{ p.name }}</option>
           </select>
         </div>
@@ -95,6 +104,7 @@
             <div class="flex items-center gap-2 mt-1 flex-wrap">
               <span v-if="selected.category" class="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{{ selected.category }}</span>
               <span v-if="selected.process_type" class="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">{{ selected.process_type }}</span>
+              <span v-if="selected.voc_type" class="text-xs bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full">{{ selected.voc_type }}</span>
               <span v-if="selected.tags" class="text-xs text-slate-400">{{ selected.tags }}</span>
               <span class="text-xs text-slate-300 ml-auto">수정: {{ selected.updated_at?.slice(0,10) }}</span>
             </div>
@@ -115,15 +125,18 @@
         </div>
         <div v-if="rightTab==='vocs'" class="space-y-3">
           <div v-if="!linkedVocs.length" class="empty-state h-32">연결된 VOC가 없습니다</div>
-          <div v-for="v in linkedVocs" :key="v.id" class="card p-4 flex items-center gap-3">
+          <div v-for="v in linkedVocs" :key="v.id"
+               class="card p-4 flex items-center gap-3 cursor-pointer hover:border-blue-200 transition-all"
+               @click="openVocLink(v)">
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 mb-0.5">
                 <span class="text-xs font-mono text-slate-400">{{ v.voc_number||('#'+v.id) }}</span>
                 <span :class="['badge','status-'+v.status]">{{ statusLabel[v.status] }}</span>
               </div>
-              <div class="text-sm font-medium text-slate-800 truncate">{{ v.title }}</div>
+              <div class="text-sm font-medium text-blue-700 truncate">{{ v.title }}</div>
               <div v-if="v.assignee_name" class="text-xs text-slate-500 mt-0.5">{{ v.assignee_name }}</div>
             </div>
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="text-slate-300 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
           </div>
         </div>
       </div>
@@ -145,16 +158,24 @@ createApp({
   setup() {
     const { mpWidth, applyWidth, startResize } = useMpResize();
 
-    const typeItems       = ref({});
-    const statusLabel     = computed(() => buildStatusLabel(typeItems.value['voc_status']||[]));
-    const categoryList    = computed(() => (typeItems.value['category']||[]).filter(x=>!x.parent_id));
-    const processTypeList = computed(() => (typeItems.value['process_type']||[]));
+    const typeItems         = ref({});
+    const statusLabel       = computed(() => buildStatusLabel(typeItems.value['voc_status']||[]));
+    const parentCategoryList = computed(() => (typeItems.value['category']||[]).filter(x=>!x.parent_id));
+    const processTypeList   = computed(() => (typeItems.value['process_type']||[]));
 
-    const list            = ref([]);
-    const filterSearch    = ref('');
-    const filterCategory  = ref('all');
+    const list              = ref([]);
+    const filterSearch      = ref('');
+    const filterCategory    = ref('all');
+    const filterSubCategory = ref('all');
     const filterProcessType = ref('all');
     let searchTimer = null;
+
+    const filterChildCategoryList = computed(() => {
+      if (filterCategory.value === 'all') return [];
+      const parent = (typeItems.value['category']||[]).find(x=>!x.parent_id && x.name===filterCategory.value);
+      if (!parent) return [];
+      return (typeItems.value['category']||[]).filter(x=>x.parent_id===parent.id);
+    });
 
     const selected   = ref(null);
     const editMode   = ref(false);
@@ -163,8 +184,18 @@ createApp({
     const rightTab   = ref('content');
     const linkedVocs = ref([]);
 
-    const form = ref({ title:'', content:'', category:'', process_type:'', tags:'' });
+    const form = ref({ title:'', content:'', category:'', sub_category:'', process_type:'', tags:'' });
     let editor = null;
+
+    const formChildCategoryList = computed(() => {
+      if (!form.value.category) return [];
+      const parent = (typeItems.value['category']||[]).find(x=>!x.parent_id && x.name===form.value.category);
+      if (!parent) return [];
+      return (typeItems.value['category']||[]).filter(x=>x.parent_id===parent.id);
+    });
+
+    const onFilterCatChange = () => { filterSubCategory.value = 'all'; loadList(); };
+    const onFormCatChange   = () => { form.value.sub_category = ''; };
 
     const debouncedLoad = () => {
       clearTimeout(searchTimer);
@@ -175,7 +206,9 @@ createApp({
       list.value = await eel.get_knowledge(
         filterSearch.value || null,
         filterCategory.value === 'all' ? null : filterCategory.value,
-        filterProcessType.value === 'all' ? null : filterProcessType.value
+        filterProcessType.value === 'all' ? null : filterProcessType.value,
+        null,
+        filterSubCategory.value === 'all' ? null : filterSubCategory.value
       )();
     };
 
@@ -189,7 +222,7 @@ createApp({
     const startNew = async () => {
       selected.value = null;
       isNew.value = true;
-      form.value = { title:'', content:'', category:'', process_type:'', tags:'' };
+      form.value = { title:'', content:'', category:'', sub_category:'', process_type:'', tags:'' };
       editMode.value = true;
       await nextTick();
       mountEditor('');
@@ -202,6 +235,7 @@ createApp({
         title: selected.value.title,
         content: selected.value.content,
         category: selected.value.category || '',
+        sub_category: selected.value.sub_category || '',
         process_type: selected.value.process_type || '',
         tags: selected.value.tags || '',
       };
@@ -268,6 +302,12 @@ createApp({
       await loadList();
     };
 
+    const openVocLink = (v) => {
+      if (window.parent?.navigateTo) {
+        window.parent.navigateTo('pages/allvoc.html?open_id=' + v.id);
+      }
+    };
+
     onMounted(async () => {
       applyWidth(mpWidth.value);
       async function loadTypeSystem_() {
@@ -279,15 +319,22 @@ createApp({
       }
       typeItems.value = await loadTypeSystem_();
       await loadList();
+      const openId = parseInt(new URLSearchParams(window.location.search).get('open_id') || '0');
+      if (openId) {
+        const found = list.value.find(k => k.id === openId);
+        if (found) await openItem(found);
+      }
     });
 
     return {
       startResize,
-      statusLabel, categoryList, processTypeList,
-      list, filterSearch, filterCategory, filterProcessType,
+      statusLabel, parentCategoryList, processTypeList,
+      filterChildCategoryList, formChildCategoryList,
+      list, filterSearch, filterCategory, filterSubCategory, filterProcessType,
       selected, editMode, isNew, saving, rightTab, linkedVocs,
       form,
       debouncedLoad, loadList, openItem, startNew, startEdit, cancelEdit, saveItem, deleteItem,
+      onFilterCatChange, onFormCatChange, openVocLink,
       renderContent,
     };
   }

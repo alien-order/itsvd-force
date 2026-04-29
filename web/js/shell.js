@@ -43,6 +43,14 @@ createApp({
     window.refreshSidebarWorkload = loadWorkload;
     // Pages call this to reload the menu list (e.g., after settings change)
     window.refreshSidebarMenus = loadMenus;
+    // Pages call this to navigate to another page within the iframe
+    window.navigateTo = (url) => {
+      const frame = document.getElementById('content-frame');
+      if (frame) frame.src = url;
+      // Update active menu if url matches a known menu
+      const matched = activeMenus.value.find(m => getUrl(m) === url || url.startsWith(getUrl(m)));
+      if (matched) activeId.value = matched.id;
+    };
 
     onMounted(async () => {
       applyZoom(uiZoom.value);

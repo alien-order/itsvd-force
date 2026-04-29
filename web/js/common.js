@@ -35,6 +35,22 @@ function ddayCls(d) {
   return 'dday-normal';
 }
 
+function formatVocDate(dateStr, timeStr) {
+  const d = String(dateStr || '').trim();
+  const t = String(timeStr || '').trim();
+  if (!d) return '-';
+  let result = d;
+  if (d.length === 8 && /^\d{8}$/.test(d)) {
+    result = `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;
+  }
+  if (!t) return result;
+  let tf = t;
+  if (t.length === 6 && /^\d{6}$/.test(t)) {
+    tf = `${t.slice(0,2)}:${t.slice(2,4)}:${t.slice(4,6)}`;
+  }
+  return `${result} ${tf}`;
+}
+
 function renderContent(text) {
   if (!text) return '';
   if (/<[a-z][\s\S]*>/i.test(text)) return text;

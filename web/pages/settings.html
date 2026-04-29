@@ -45,45 +45,97 @@
       <div class="card overflow-hidden">
         <div v-if="!assignees.length" class="p-6 text-center text-sm text-slate-400">담당자가 없습니다</div>
         <div v-for="a in assignees" :key="a.id"
-          class="flex items-center gap-3 px-4 py-3 border-b border-slate-50 last:border-0"
+          class="border-b border-slate-50 last:border-0"
           :class="!a.active?'opacity-55':''">
-          <div class="avatar cursor-pointer relative group" @click="triggerAvatarUpload(a.id)" :title="'이미지 변경'">
-            <img v-if="a.avatar" :src="a.avatar">
-            <span v-else>{{ a.name.charAt(0) }}</span>
-            <div class="absolute inset-0 bg-black/30 rounded-[8px] opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-              <svg width="12" height="12" fill="white" viewBox="0 0 24 24"><path d="M3 17h18v2H3v-2zm8-2V7.83l-2.59 2.58L7 9l5-5 5 5-1.41 1.41L13 7.83V15h-2z"/></svg>
+          <!-- 담당자 행 -->
+          <div class="flex items-center gap-4 px-4 py-4">
+            <!-- 아바타 + 사진 업로드 -->
+            <div class="flex flex-col items-center gap-1 shrink-0">
+              <div class="relative group cursor-pointer" @click="triggerAvatarUpload(a.id)" style="width:52px;height:52px">
+                <div style="width:52px;height:52px;border-radius:14px;overflow:hidden;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;font-weight:700;box-shadow:0 2px 8px rgba(99,102,241,0.3)">
+                  <img v-if="a.avatar" :src="a.avatar" style="width:100%;height:100%;object-fit:cover;border-radius:14px;display:block">
+                  <span v-else>{{ a.name.charAt(0) }}</span>
+                </div>
+                <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style="border-radius:14px;background:rgba(0,0,0,0.45)">
+                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                </div>
+              </div>
+              <button @click="triggerAvatarUpload(a.id)" class="text-xs text-indigo-500 hover:text-indigo-700 font-medium leading-none" style="background:none;border:none;cursor:pointer;padding:0">
+                {{ a.avatar ? '변경' : '사진 추가' }}
+              </button>
+            </div>
+            <input type="file" accept="image/*" class="hidden" :ref="el => avatarInputs[a.id] = el" @change="onAvatarFile(a, $event)">
+            <!-- 이름/정보 -->
+            <div class="flex-1 min-w-0">
+              <template v-if="editingAssigneeId===a.id">
+                <div class="grid grid-cols-3 gap-2">
+                  <input v-model="editAssigneeForm.name" type="text" placeholder="이름" class="inp text-xs py-1">
+                  <input v-model="editAssigneeForm.knox_id" type="text" placeholder="KNOX ID" class="inp text-xs py-1">
+                  <input v-model="editAssigneeForm.ip_address" type="text" placeholder="IP" class="inp text-xs py-1">
+                </div>
+                <div class="flex gap-2 mt-1.5">
+                  <button @click="saveAssignee(a.id)" class="btn btn-primary text-xs px-3">저장</button>
+                  <button @click="editingAssigneeId=null" class="btn btn-secondary text-xs px-2">취소</button>
+                </div>
+              </template>
+              <template v-else>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-medium text-sm text-slate-800">{{ a.name }}</span>
+                  <span v-if="!a.active" class="text-xs text-slate-300">비활성</span>
+                  <span v-if="a.knox_id" class="text-xs text-slate-400 font-mono bg-slate-50 px-1.5 py-0.5 rounded">{{ a.knox_id }}</span>
+                  <span v-if="a.ip_address" class="text-xs text-slate-400 font-mono bg-slate-50 px-1.5 py-0.5 rounded">{{ a.ip_address }}</span>
+                </div>
+                <div class="text-xs text-slate-400 mt-0.5">
+                  순번 {{ a.turn_order }} · 보류 {{ a.hold_turns }}회
+                  <span v-if="assigneeCatMap[a.id]?.size" class="ml-2 text-indigo-400">
+                    업무유형 {{ assigneeCatMap[a.id].size }}개
+                  </span>
+                  <span v-else class="ml-2 text-orange-400">업무유형 미설정</span>
+                </div>
+              </template>
+            </div>
+            <!-- 버튼 -->
+            <div class="flex items-center gap-1.5 shrink-0" v-if="editingAssigneeId!==a.id">
+              <button @click="toggleCatPanel(a.id)"
+                class="btn text-xs px-2.5 py-1 flex items-center gap-1"
+                :class="expandedAssigneeIds[a.id] ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'btn-secondary'">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path :d="expandedAssigneeIds[a.id]?'M5 15l7-7 7 7':'M19 9l-7 7-7-7'"/></svg>
+                업무유형
+              </button>
+              <button @click="toggleAssignee(a)" class="btn text-xs px-2.5 py-1"
+                :class="a.active?'btn-secondary':'bg-green-50 text-green-700 border border-green-200'">
+                {{ a.active?'비활성화':'활성화' }}
+              </button>
+              <button @click="startEditAssignee(a)" class="btn btn-secondary text-xs px-2.5 py-1">편집</button>
+              <button @click="deleteAssignee(a.id)" class="btn btn-danger text-xs px-2.5 py-1">삭제</button>
             </div>
           </div>
-          <input type="file" accept="image/*" class="hidden" :ref="el => avatarInputs[a.id] = el" @change="onAvatarFile(a, $event)">
-          <div class="flex-1 min-w-0">
-            <template v-if="editingAssigneeId===a.id">
-              <div class="grid grid-cols-3 gap-2">
-                <input v-model="editAssigneeForm.name" type="text" placeholder="이름" class="inp text-xs py-1">
-                <input v-model="editAssigneeForm.knox_id" type="text" placeholder="KNOX ID" class="inp text-xs py-1">
-                <input v-model="editAssigneeForm.ip_address" type="text" placeholder="IP" class="inp text-xs py-1">
+
+          <!-- 업무유형 아코디언 패널 -->
+          <div v-if="expandedAssigneeIds[a.id]" class="px-4 pb-4">
+            <div class="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4">
+              <div class="flex items-center justify-between mb-3">
+                <p class="text-xs font-semibold text-indigo-700">담당 업무유형 설정</p>
+                <div class="flex gap-2">
+                  <button @click="setAllCats(a.id, true)" class="text-xs text-indigo-500 hover:text-indigo-700 underline" style="background:none;border:none;cursor:pointer;padding:0">전체 선택</button>
+                  <span class="text-xs text-slate-300">|</span>
+                  <button @click="setAllCats(a.id, false)" class="text-xs text-slate-400 hover:text-slate-600 underline" style="background:none;border:none;cursor:pointer;padding:0">전체 해제</button>
+                </div>
               </div>
-              <div class="flex gap-2 mt-1.5">
-                <button @click="saveAssignee(a.id)" class="btn btn-primary text-xs px-3">저장</button>
-                <button @click="editingAssigneeId=null" class="btn btn-secondary text-xs px-2">취소</button>
+              <div class="grid gap-1.5" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr))">
+                <label v-for="cat in parentCategories" :key="cat.id"
+                  class="flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors text-xs"
+                  :class="isAssigneeCat(a.id, cat.id)
+                    ? 'bg-indigo-100 text-indigo-800 font-semibold'
+                    : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-100'">
+                  <input type="checkbox"
+                    :checked="isAssigneeCat(a.id, cat.id)"
+                    @change="toggleAssigneeCat(a.id, cat.id)"
+                    class="rounded accent-indigo-500 shrink-0">
+                  <span class="truncate">{{ cat.name }}</span>
+                </label>
               </div>
-            </template>
-            <template v-else>
-              <div class="flex items-center gap-2 flex-wrap">
-                <span class="font-medium text-sm text-slate-800">{{ a.name }}</span>
-                <span v-if="!a.active" class="text-xs text-slate-300">비활성</span>
-                <span v-if="a.knox_id" class="text-xs text-slate-400 font-mono bg-slate-50 px-1.5 py-0.5 rounded">{{ a.knox_id }}</span>
-                <span v-if="a.ip_address" class="text-xs text-slate-400 font-mono bg-slate-50 px-1.5 py-0.5 rounded">{{ a.ip_address }}</span>
-              </div>
-              <div class="text-xs text-slate-400 mt-0.5">순번 {{ a.turn_order }} · 보류 {{ a.hold_turns }}회</div>
-            </template>
-          </div>
-          <div class="flex items-center gap-1.5 shrink-0" v-if="editingAssigneeId!==a.id">
-            <button @click="toggleAssignee(a)" class="btn text-xs px-2.5 py-1"
-              :class="a.active?'btn-secondary':'bg-green-50 text-green-700 border border-green-200'">
-              {{ a.active?'비활성화':'활성화' }}
-            </button>
-            <button @click="startEditAssignee(a)" class="btn btn-secondary text-xs px-2.5 py-1">편집</button>
-            <button @click="deleteAssignee(a.id)" class="btn btn-danger text-xs px-2.5 py-1">삭제</button>
+            </div>
           </div>
         </div>
       </div>
@@ -117,39 +169,42 @@
         </div>
       </div>
 
-      <!-- 전담 배정 규칙 -->
+      <!-- 휴가 유형 설정 -->
       <div class="card p-5 mb-5">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-semibold text-slate-700">유형별 전담 배정</h3>
-          <button @click="showAddRule=!showAddRule" class="btn btn-secondary text-xs px-3">+ 추가</button>
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-sm font-semibold text-slate-700">휴가 설정</h3>
+          <button @click="saveAllVacationConfigs" class="btn btn-primary text-xs px-4">저장</button>
         </div>
-        <div v-if="showAddRule" class="flex gap-2 mb-3 p-3 bg-slate-50 rounded-lg flex-wrap">
-          <select v-model="newRule.category" class="inp text-xs py-1.5 flex-1" style="min-width:120px">
-            <option value="">유형 선택</option>
-            <option v-for="c in categoryList" :key="c.id" :value="c.name">{{ c.name }}</option>
-          </select>
-          <select v-model="newRule.assignee_id" class="inp text-xs py-1.5 flex-1" style="min-width:120px">
-            <option value="">담당자 선택</option>
-            <option v-for="a in assignees.filter(x=>x.active)" :key="a.id" :value="String(a.id)">{{ a.name }}</option>
-          </select>
-          <input v-model="newRule.note" type="text" placeholder="비고" class="inp text-xs py-1.5 flex-1" style="min-width:100px">
-          <button @click="saveRule" class="btn btn-primary text-xs px-3">저장</button>
-          <button @click="showAddRule=false" class="btn btn-secondary text-xs px-2">✕</button>
+        <div class="space-y-3">
+          <div v-for="cfg in vacationTypeConfig" :key="cfg.vacation_type"
+            class="flex items-center gap-4 px-5 py-3.5 rounded-xl bg-slate-50 border border-slate-100">
+            <span class="text-sm font-semibold text-slate-700 shrink-0" style="min-width:72px">{{ cfg.vacation_type }}</span>
+            <div class="flex items-center gap-2 text-xs text-slate-500 shrink-0">
+              <input v-model="cfg.time_start" type="time" class="inp text-xs py-1.5" style="width:145px">
+              <span class="text-slate-300">~</span>
+              <input v-model="cfg.time_end" type="time" class="inp text-xs py-1.5" style="width:145px">
+            </div>
+            <div class="flex items-center gap-1.5 text-xs text-slate-500 shrink-0">
+              <input v-model.number="cfg.n_rounds" type="number" min="0" class="inp text-xs py-1.5 text-center" style="width:56px">
+              <span>바퀴 후 배정</span>
+            </div>
+            <label class="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer shrink-0 select-none ml-auto">
+              <input type="checkbox" :checked="!!cfg.assign_during" @change="cfg.assign_during = $event.target.checked ? 1 : 0" class="accent-indigo-500">
+              휴가 중 배정
+            </label>
+          </div>
         </div>
-        <div v-if="!rules.length" class="text-sm text-slate-400 py-2 text-center">설정된 규칙이 없습니다</div>
-        <div v-for="r in rules" :key="r.id" class="flex items-center gap-3 py-2 border-b border-slate-50 last:border-0">
-          <span class="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{{ r.category }}</span>
-          <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" class="text-slate-300 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
-          <span class="text-sm font-medium text-slate-800 flex-1">{{ r.assignee_name }}</span>
-          <span v-if="r.note" class="text-xs text-slate-400">{{ r.note }}</span>
-          <button @click="deleteRule(r.id)" class="btn btn-danger text-xs px-2.5 py-1">삭제</button>
-        </div>
+        <p class="text-xs text-slate-400 mt-3">
+          · <b>바퀴 후 배정</b>: '휴가 중 배정' 체크 시, 해당 바퀴 수만큼 배정을 건너뛴 후 휴가자도 배정에 포함합니다.<br>
+          · 체크 해제 시 완전 제외. 복귀 후 누락된 라운드가 있으면 1순위 배정됩니다.
+        </p>
+        <div v-if="vacConfigSaved" class="mt-2 text-xs text-green-600 font-medium">저장되었습니다.</div>
       </div>
 
       <!-- 휴가 관리 -->
       <div class="card p-5">
         <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-semibold text-slate-700">휴가 관리</h3>
+          <h3 class="text-sm font-semibold text-slate-700">휴가 일정</h3>
           <button @click="showAddVacation=!showAddVacation" class="btn btn-secondary text-xs px-3">+ 추가</button>
         </div>
         <div v-if="showAddVacation" class="flex gap-2 mb-3 p-3 bg-slate-50 rounded-lg flex-wrap">
@@ -166,14 +221,25 @@
           <button @click="addVacation" class="btn btn-primary text-xs px-3">추가</button>
           <button @click="showAddVacation=false" class="btn btn-secondary text-xs px-2">✕</button>
         </div>
-        <div v-if="!vacations.length" class="text-sm text-slate-400 py-2 text-center">등록된 휴가가 없습니다</div>
+
+        <!-- 연도/월 필터 -->
+        <div class="flex items-center gap-2 mb-3">
+          <select v-model="vacHistYear" @change="loadVacationHistory" class="inp text-xs py-1.5" style="width:90px">
+            <option v-for="y in vacHistYears" :key="y" :value="y">{{ y }}년</option>
+          </select>
+          <select v-model="vacHistMonth" @change="loadVacationHistory" class="inp text-xs py-1.5" style="width:72px">
+            <option value="">전체</option>
+            <option v-for="m in 12" :key="m" :value="m">{{ m }}월</option>
+          </select>
+        </div>
+
+        <div v-if="!vacations.length" class="text-sm text-slate-400 py-2 text-center">해당 기간 휴가 없음</div>
         <div v-for="v in vacations" :key="v.id"
           :class="['flex items-center gap-3 py-2 border-b border-slate-50 last:border-0', v.is_past?'opacity-45':'']">
-          <div class="avatar sm"><img v-if="v.avatar" :src="v.avatar"><span v-else>{{ (v.assignee_name||'?').charAt(0) }}</span></div>
-          <span class="text-sm text-slate-700">{{ v.assignee_name }}</span>
-          <span class="text-xs font-mono text-slate-500">{{ v.vacation_date }}</span>
-          <span class="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{{ v.vacation_type }}</span>
-          <span v-if="v.is_past" class="text-xs text-slate-300">지남</span>
+          <span class="text-xs font-mono text-slate-500 shrink-0">{{ v.vacation_date }}</span>
+          <span class="text-sm text-slate-700 shrink-0">{{ v.assignee_name }}</span>
+          <span class="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded shrink-0">{{ v.vacation_type }}</span>
+          <span v-if="v.is_past" class="text-xs text-slate-300 shrink-0">지남</span>
           <span class="flex-1"></span>
           <button @click="deleteVacation(v.id)" class="btn btn-danger text-xs px-2.5 py-1">삭제</button>
         </div>
@@ -380,11 +446,7 @@
           <input v-model="apiConfig.api_list_path" type="text" placeholder="예: vocInfoList" class="inp text-sm">
           <p class="text-xs text-slate-400 mt-1">API 응답에서 단계 배열의 경로입니다. 각 항목은 <span class="font-mono bg-slate-100 px-1 rounded">uppervocno</span>로 부모와 연결됩니다.</p>
         </div>
-        <div>
-          <label class="text-xs font-semibold text-slate-500 mb-1.5 block">단계 상태 컬럼명</label>
-          <input v-model="apiConfig.api_stage_status_col" type="text" placeholder="stage_status" class="inp text-sm" style="max-width:200px">
-          <p class="text-xs text-slate-400 mt-1">아래 단계 필드 매핑에서 단계 상태를 나타내는 컬럼명입니다.</p>
-        </div>
+        <p class="text-xs text-slate-400 -mt-2">단계 상태는 <span class="font-mono bg-slate-100 px-1 rounded">vocstatuscode</span>를 VOC 상태 설정의 코드값으로 자동 매핑합니다.</p>
         <div>
           <div class="flex items-center justify-between mb-2">
             <div>
@@ -644,6 +706,54 @@ createApp({
       else alert(r.error);
     };
 
+    // ── 담당자 업무유형 매핑 ─────────────────────────────────────────
+    const parentCategories    = ref([]);  // type_items: category 그룹 부모 항목
+    const assigneeCatMap      = ref({});  // { assignee_id: Set<category_id> }
+    const expandedAssigneeIds = ref({});  // { assignee_id: bool }
+
+    const loadAssigneeCategories = async () => {
+      const [items, allCats] = await Promise.all([
+        eel.get_type_items('category')(),
+        eel.get_all_assignee_categories()(),
+      ]);
+      parentCategories.value = items.filter(x => !x.parent_id);
+      const map = {};
+      for (const [aid, cids] of Object.entries(allCats)) {
+        map[parseInt(aid)] = new Set(cids.map(Number));
+      }
+      assigneeCatMap.value = map;
+    };
+
+    const isAssigneeCat = (assigneeId, catId) =>
+      !!(assigneeCatMap.value[assigneeId]?.has(catId));
+
+    const toggleAssigneeCat = async (assigneeId, catId) => {
+      if (!assigneeCatMap.value[assigneeId]) {
+        assigneeCatMap.value[assigneeId] = new Set();
+      }
+      const s = assigneeCatMap.value[assigneeId];
+      if (s.has(catId)) s.delete(catId); else s.add(catId);
+      // Vue 반응성 트리거
+      assigneeCatMap.value = { ...assigneeCatMap.value };
+      await eel.set_assignee_categories(assigneeId, [...s])();
+    };
+
+    const setAllCats = async (assigneeId, checked) => {
+      const ids = checked ? parentCategories.value.map(c => c.id) : [];
+      assigneeCatMap.value = {
+        ...assigneeCatMap.value,
+        [assigneeId]: new Set(ids),
+      };
+      await eel.set_assignee_categories(assigneeId, ids)();
+    };
+
+    const toggleCatPanel = (assigneeId) => {
+      expandedAssigneeIds.value = {
+        ...expandedAssigneeIds.value,
+        [assigneeId]: !expandedAssigneeIds.value[assigneeId],
+      };
+    };
+
     // ── 담당자 아바타 이미지 ────────────────────────────────────────
     const avatarInputs = {};
     const triggerAvatarUpload = (id) => { avatarInputs[id]?.click(); };
@@ -678,14 +788,46 @@ createApp({
     const showAddVacation = ref(false);
     const newVacation  = ref({ assignee_id:'', vacation_date: todayStr(), vacation_type:'연차' });
 
+    // 휴가 유형 설정
+    const vacationTypeConfig = ref([]);
+    const vacConfigSaved     = ref(false);
+
+    // 휴가 히스토리 필터
+    const nowDate     = new Date();
+    const vacHistYear  = ref(nowDate.getFullYear());
+    const vacHistMonth = ref(nowDate.getMonth() + 1);
+    const vacHistYears = (() => {
+      const yr = nowDate.getFullYear();
+      return [yr - 1, yr, yr + 1];
+    })();
+
+    const loadVacationHistory = async () => {
+      vacations.value = await eel.get_vacations(vacHistYear.value, vacHistMonth.value || null)();
+    };
+
+    const loadVacationTypeConfig = async () => {
+      vacationTypeConfig.value = await eel.get_vacation_type_config()();
+    };
+
+    const saveAllVacationConfigs = async () => {
+      for (const cfg of vacationTypeConfig.value) {
+        await eel.save_vacation_type_config(
+          cfg.vacation_type, cfg.time_start, cfg.time_end,
+          cfg.n_rounds, cfg.assign_during
+        )();
+      }
+      vacConfigSaved.value = true;
+      setTimeout(() => { vacConfigSaved.value = false; }, 2000);
+    };
+
     const loadAssignment = async () => {
-      const [as, rl, vc] = await Promise.all([
-        eel.get_assignees()(), eel.get_assignment_rules()(), eel.get_vacations()(),
+      const [as, rl] = await Promise.all([
+        eel.get_assignees()(), eel.get_assignment_rules()(),
       ]);
       assignees.value = as;
       rules.value     = rl;
-      vacations.value = vc;
       turnOrder.value = [...as].sort((a,b) => a.turn_order - b.turn_order);
+      await Promise.all([loadVacationHistory(), loadVacationTypeConfig()]);
     };
 
     const turnOrderMoveUp = (i) => {
@@ -723,12 +865,12 @@ createApp({
       const r = await eel.add_vacation(parseInt(newVacation.value.assignee_id), newVacation.value.vacation_date, newVacation.value.vacation_type)();
       if (r.success) {
         showAddVacation.value = false;
-        vacations.value = await eel.get_vacations()();
+        await loadVacationHistory();
       } else alert(r.error);
     };
     const deleteVacation = async (id) => {
       await eel.delete_vacation(id)();
-      vacations.value = await eel.get_vacations()();
+      await loadVacationHistory();
     };
 
     // ── 유형 관리 ────────────────────────────────────────────────
@@ -757,7 +899,8 @@ createApp({
     const addParentItem = async (code) => {
       const name = (newTypeItem.value[code]||'').trim();
       if (!name) return;
-      await eel.add_type_item(code, name, (newTypeItemValue.value[code]||'').trim())();
+      const r = await eel.add_type_item(code, name, (newTypeItemValue.value[code]||'').trim())();
+      if (!r.success) { alert(r.error || '추가 실패'); return; }
       newTypeItem.value      = {...newTypeItem.value, [code]:''};
       newTypeItemValue.value = {...newTypeItemValue.value, [code]:''};
       await loadTypes();
@@ -765,7 +908,8 @@ createApp({
     const addChildItem = async (code, parentId) => {
       const name = (newChildName.value[parentId]||'').trim();
       if (!name) return;
-      await eel.add_type_item(code, name, (newChildValue.value[parentId]||'').trim(), parentId)();
+      const r = await eel.add_type_item(code, name, (newChildValue.value[parentId]||'').trim(), parentId)();
+      if (!r.success) { alert(r.error || '추가 실패'); return; }
       newChildName.value  = {...newChildName.value, [parentId]:''};
       newChildValue.value = {...newChildValue.value, [parentId]:''};
       await loadTypes();
@@ -773,7 +917,8 @@ createApp({
     const addFlatItem = async (code) => {
       const name = (newTypeItem.value[code]||'').trim();
       if (!name) return;
-      await eel.add_type_item(code, name, (newTypeItemValue.value[code]||'').trim())();
+      const r = await eel.add_type_item(code, name, (newTypeItemValue.value[code]||'').trim())();
+      if (!r.success) { alert(r.error || '추가 실패'); return; }
       newTypeItem.value      = {...newTypeItem.value, [code]:''};
       newTypeItemValue.value = {...newTypeItemValue.value, [code]:''};
       await loadTypes();
@@ -951,7 +1096,7 @@ createApp({
     // ── 탭 전환 ───────────────────────────────────────────────────
     const switchTab = async (id) => {
       activeTab.value = id;
-      if (id==='assignees') { await loadAssignees(); }
+      if (id==='assignees') { await loadAssignees(); await loadAssigneeCategories(); }
       if (id==='assignment') { await loadAssignment(); await loadTypeSystemMap().then(m=>typeItems.value=m); }
       if (id==='types') { await loadTypes(); }
       if (id==='api') { await loadApiConfig(); }
@@ -960,6 +1105,7 @@ createApp({
 
     onMounted(async () => {
       await loadAssignees();
+      await loadAssigneeCategories();
     });
 
     return {
@@ -968,9 +1114,14 @@ createApp({
       assignees, showAddAssignee, newAssignee, editingAssigneeId, editAssigneeForm,
       avatarInputs, triggerAvatarUpload, onAvatarFile,
       addAssignee, startEditAssignee, saveAssignee, toggleAssignee, deleteAssignee,
+      // 담당자 업무유형
+      parentCategories, assigneeCatMap, expandedAssigneeIds,
+      isAssigneeCat, toggleAssigneeCat, setAllCats, toggleCatPanel,
       // 배정
       turnOrder, rules, vacations, showAddRule, newRule, categoryList,
       showAddVacation, newVacation,
+      vacationTypeConfig, vacConfigSaved, vacHistYear, vacHistMonth, vacHistYears,
+      saveAllVacationConfigs, loadVacationHistory,
       turnOrderMoveUp, turnOrderMoveDown, saveTurnOrder,
       saveRule, deleteRule, addVacation, deleteVacation,
       // 유형

@@ -195,23 +195,22 @@ createApp({
     const typeItems       = ref({});
     const statusLabel     = computed(() => buildStatusLabel(typeItems.value['voc_status']||[]));
 
-    // Status cards definition
-    const STATUS_COLORS = {
-      open:        { label:'접수',   labelColor:'#2563eb', valueColor:'#1d4ed8', hoverColor:'blue' },
-      in_progress: { label:'처리중', labelColor:'#b45309', valueColor:'#92400e', hoverColor:'amber' },
-      resolved:    { label:'해결',   labelColor:'#15803d', valueColor:'#166534', hoverColor:'green' },
-      closed:      { label:'종료',   labelColor:'#475569', valueColor:'#334155', hoverColor:'slate' },
+    // 표시할 상태값 고정: SvD이관(41), SR완료대기(52), 처리완료(50)
+    const SHOWN_STATUS_VALS = ['41', '52', '50'];
+    const SHOWN_STATUS_COLORS = {
+      '41': { labelColor:'#2563eb', valueColor:'#1d4ed8', hoverColor:'blue' },
+      '52': { labelColor:'#b45309', valueColor:'#92400e', hoverColor:'amber' },
+      '50': { labelColor:'#15803d', valueColor:'#166534', hoverColor:'green' },
     };
     const statusCardList = computed(() => {
       const sl = statusLabel.value;
-      const order = ['open','in_progress','resolved','closed'];
       const byStatus = statusSummary.value.by_status || {};
-      return order
-        .filter(k => sl[k] || byStatus[k])
+      return SHOWN_STATUS_VALS
+        .filter(k => k in byStatus || sl[k])
         .map(k => ({
           key: k,
-          ...(STATUS_COLORS[k] || { label:k, labelColor:'#475569', valueColor:'#334155', hoverColor:'slate' }),
-          label: sl[k] || STATUS_COLORS[k]?.label || k,  // type system label takes priority
+          label: sl[k] || k,
+          ...(SHOWN_STATUS_COLORS[k] || { labelColor:'#475569', valueColor:'#334155', hoverColor:'slate' }),
         }));
     });
 
@@ -224,9 +223,8 @@ createApp({
       return Object.entries(m).map(([cat,cnt])=>({cat,cnt})).sort((a,b)=>b.cnt-a.cnt);
     });
     const shownStatuses = computed(() => {
-      const order = ['open','in_progress','resolved','closed'];
       const all = assigneeStats.value.all_statuses || [];
-      return [...order.filter(s=>all.includes(s)), ...all.filter(s=>!order.includes(s))];
+      return SHOWN_STATUS_VALS.filter(s => all.includes(s));
     });
 
     // Date shortcuts

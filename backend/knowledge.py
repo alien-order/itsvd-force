@@ -1,7 +1,7 @@
 from backend.db import get_conn
 
 
-def get_all(search=None, category=None, process_type=None):
+def get_all(search=None, category=None, process_type=None, voc_type=None, sub_category=None):
     q = 'SELECT * FROM knowledge WHERE 1=1'
     params = []
     if search and search.strip():
@@ -11,9 +11,15 @@ def get_all(search=None, category=None, process_type=None):
     if category and category != 'all':
         q += ' AND category = ?'
         params.append(category)
+    if sub_category and sub_category != 'all':
+        q += ' AND sub_category = ?'
+        params.append(sub_category)
     if process_type and process_type != 'all':
         q += ' AND process_type = ?'
         params.append(process_type)
+    if voc_type and voc_type != 'all':
+        q += ' AND voc_type = ?'
+        params.append(voc_type)
     q += ' ORDER BY updated_at DESC'
     with get_conn() as conn:
         rows = conn.execute(q, params).fetchall()
@@ -32,8 +38,9 @@ def create(data):
         return {'success': False, 'error': '제목을 입력하세요.'}
     with get_conn() as conn:
         cur = conn.execute(
-            'INSERT INTO knowledge (title, content, category, tags, process_type) VALUES (?, ?, ?, ?, ?)',
-            (title, data.get('content', ''), data.get('category', ''), data.get('tags', ''), data.get('process_type', ''))
+            'INSERT INTO knowledge (title, content, category, sub_category, tags, process_type) VALUES (?, ?, ?, ?, ?, ?)',
+            (title, data.get('content', ''), data.get('category', ''),
+             data.get('sub_category', ''), data.get('tags', ''), data.get('process_type', ''))
         )
     return {'success': True, 'id': cur.lastrowid}
 
@@ -41,8 +48,9 @@ def create(data):
 def update(kid, data):
     with get_conn() as conn:
         conn.execute(
-            "UPDATE knowledge SET title=?, content=?, category=?, tags=?, process_type=?, updated_at=datetime('now','localtime') WHERE id=?",
-            (data.get('title', ''), data.get('content', ''), data.get('category', ''), data.get('tags', ''), data.get('process_type', ''), kid)
+            "UPDATE knowledge SET title=?, content=?, category=?, sub_category=?, tags=?, process_type=?, updated_at=datetime('now','localtime') WHERE id=?",
+            (data.get('title', ''), data.get('content', ''), data.get('category', ''),
+             data.get('sub_category', ''), data.get('tags', ''), data.get('process_type', ''), kid)
         )
     return {'success': True}
 

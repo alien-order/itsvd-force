@@ -12,13 +12,13 @@ _TYPE_NOTE = {
 }
 
 
-def _update_status_from_last_stage(voc_id, stage_status):
-    if not stage_status:
+def _update_status_from_last_stage(voc_id, vocstatuscode):
+    if not vocstatuscode:
         return
     with get_conn() as conn:
         item = conn.execute(
             "SELECT value FROM type_items WHERE group_code='voc_status' AND (name=? OR value=?)",
-            (stage_status, stage_status)
+            (vocstatuscode, vocstatuscode)
         ).fetchone()
         if item:
             conn.execute(
@@ -54,16 +54,16 @@ def get_voc_info(voc_id):
 
 
 def save_voc_stages(voc_id, stages):
-    _META = {'id', 'voc_id', 'stage_index', 'uppervocno', 'stage_status', 'created_at', 'vocno'}
+    _META = {'id', 'voc_id', 'stage_index', 'uppervocno', 'vocstatuscode', 'created_at', 'vocno'}
     with get_conn() as conn:
         stage_cols = {r['name'] for r in conn.execute('PRAGMA table_info(voc_stage_info)').fetchall()}
         conn.execute('DELETE FROM voc_stage_info WHERE voc_id=?', (voc_id,))
         for s in stages:
             row = {
-                'voc_id':       voc_id,
-                'stage_index':  s.get('stage_index', 0),
-                'uppervocno':   s.get('uppervocno', ''),
-                'stage_status': s.get('stage_status', ''),
+                'voc_id':        voc_id,
+                'stage_index':   s.get('stage_index', 0),
+                'uppervocno':    s.get('uppervocno', ''),
+                'vocstatuscode': s.get('vocstatuscode', ''),
             }
             stage_data = s.get('stage_data', {})
             if 'vocno' in stage_cols and 'vocno' in stage_data:
@@ -80,7 +80,7 @@ def save_voc_stages(voc_id, stages):
 
 
 def get_voc_stages(voc_id):
-    _META = {'id', 'voc_id', 'stage_index', 'uppervocno', 'stage_status', 'vocno'}
+    _META = {'id', 'voc_id', 'stage_index', 'uppervocno', 'vocstatuscode', 'vocno'}
     with get_conn() as conn:
         rows = conn.execute(
             'SELECT * FROM voc_stage_info WHERE voc_id=? ORDER BY stage_index ASC',
@@ -157,7 +157,7 @@ def create_voc(data, stages=None):
 
     if stages:
         save_voc_stages(voc_id, stages)
-        _update_status_from_last_stage(voc_id, stages[-1].get('stage_status', ''))
+        _update_status_from_last_stage(voc_id, stages[-1].get('vocstatuscode', ''))
 
     return {'success': True, 'voc': dict(row), 'assign_info': assign_result}
 
@@ -257,8 +257,12 @@ def update_status(voc_id, status):
     return {'success': True}
 
 
+def _strip_html(text):
+    return re.sub(r'<[^>]+>', ' ', str(text or ''))
+
+
 def get_similar(title, content, limit=5, exclude_id=None):
-    text = f'{title} {content}'
+    text = f'{_strip_html(title)} {_strip_html(content)}'
     words = set(re.findall(r'[가-힣a-zA-Z0-9]{2,}', text))
 
     if not words:
@@ -279,7 +283,7 @@ def get_similar(title, content, limit=5, exclude_id=None):
 
     scored = []
     for row in rows:
-        row_words = set(re.findall(r'[가-힣a-zA-Z0-9]{2,}', f'{row["title"]} {row["content"]}'))
+        row_words = set(re.findall(r'[가-힣a-zA-Z0-9]{2,}', f'{_strip_html(row["title"])} {_strip_html(row["content"])}'))
         overlap = len(words & row_words)
         if overlap > 0:
             scored.append((overlap, dict(row)))
@@ -461,7 +465,7 @@ def update_from_sync(voc_id, data, stages=None):
     if stages is not None:
         save_voc_stages(voc_id, stages)
         if stages:
-            _update_status_from_last_stage(voc_id, stages[-1].get('stage_status', ''))
+            _update_status_from_last_stage(voc_id, stages[-1].get('vocstatuscode', ''))
 
     if not fields and stages is None:
         return {'success': False, 'error': '업데이트할 데이터가 없습니다.'}

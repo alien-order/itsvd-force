@@ -103,6 +103,18 @@ def toggle_assignee(assignee_id):
     return assignment.toggle_assignee(assignee_id)
 
 @eel.expose
+def get_assignee_categories(assignee_id):
+    return assignment.get_assignee_categories(assignee_id)
+
+@eel.expose
+def set_assignee_categories(assignee_id, category_ids):
+    return assignment.set_assignee_categories(assignee_id, category_ids)
+
+@eel.expose
+def get_all_assignee_categories():
+    return assignment.get_all_assignee_categories()
+
+@eel.expose
 def get_workload():
     return assignment.get_workload()
 
@@ -139,8 +151,16 @@ def auto_assign_voc(voc_id):
     return assignment.auto_assign_voc(voc_id)
 
 @eel.expose
-def get_vacations():
-    return assignment.get_vacations()
+def get_vacation_type_config():
+    return assignment.get_vacation_type_config()
+
+@eel.expose
+def save_vacation_type_config(vacation_type, time_start, time_end, n_rounds, assign_during):
+    return assignment.save_vacation_type_config(vacation_type, time_start, time_end, n_rounds, assign_during)
+
+@eel.expose
+def get_vacations(year=None, month=None):
+    return assignment.get_vacations(year, month)
 
 @eel.expose
 def add_vacation(assignee_id, vacation_date, vacation_type):
@@ -185,8 +205,8 @@ def check_image_support():
 
 # ── 레퍼런스 (지식베이스) ─────────────────────────────────────────
 @eel.expose
-def get_knowledge(search=None, category=None, process_type=None):
-    return knowledge.get_all(search, category, process_type)
+def get_knowledge(search=None, category=None, process_type=None, voc_type=None, sub_category=None):
+    return knowledge.get_all(search, category, process_type, voc_type, sub_category)
 
 @eel.expose
 def get_knowledge_one(kid):
@@ -438,6 +458,81 @@ def batch_upsert_voc(voc_number):
         data['voc_number'] = voc_number
         create_result = voc.create_voc(data, stages)
         return {**create_result, 'action': 'created', 'voc_number': voc_number}
+
+
+@eel.expose
+def create_test_data():
+    from backend.db import get_conn as _gc
+    import json as _json
+    from datetime import datetime as _dt, timedelta as _td
+    with _gc() as conn:
+        # 실제 설정된 코드로 테스트 데이터 생성
+        cats  = [dict(r) for r in conn.execute(
+            "SELECT * FROM type_items WHERE group_code='category' AND parent_id IS NULL ORDER BY sort_order LIMIT 6"
+        ).fetchall()]
+        child_cats = [dict(r) for r in conn.execute(
+            "SELECT * FROM type_items WHERE group_code='category' AND parent_id IS NOT NULL ORDER BY sort_order LIMIT 10"
+        ).fetchall()]
+        statuses = [dict(r) for r in conn.execute(
+            "SELECT * FROM type_items WHERE group_code='voc_status' ORDER BY sort_order"
+        ).fetchall()]
+        proc_types = [dict(r) for r in conn.execute(
+            "SELECT * FROM type_items WHERE group_code='process_type' ORDER BY sort_order LIMIT 8"
+        ).fetchall()]
+        assignees = [dict(r) for r in conn.execute(
+            "SELECT * FROM assignees WHERE active=1 ORDER BY turn_order"
+        ).fetchall()]
+
+    if not cats or not statuses or not assignees:
+        return {'success': False, 'error': '카테고리, 상태, 담당자 설정을 먼저 완료하세요.'}
+
+    import random as _random
+    _random.seed(42)
+
+    samples = [
+        ('VERS DX 사용자 계정 생성 요청',    'VERS(DX) 시스템에 신규 사용자 계정 생성을 요청합니다. 부서 이동으로 인한 권한 재설정 필요.'),
+        ('MRO 데이터 조회 오류 문의',         'MRO2.0 시스템에서 자재 데이터 조회 시 에러 메시지가 표시됩니다. 스크린샷 첨부.'),
+        ('구매 신청 결재선 변경 요청',         '구매 신청 시 결재선이 자동으로 잘못 설정되는 문제. 담당 부서 변경 사항 반영 요청.'),
+        ('글로벌 마케팅 시스템 접속 불가',     '해외 사용자가 VPN 연결 후에도 시스템 접속이 안 됩니다. IP 허용 목록 확인 필요.'),
+        ('IT 인프라 모니터링 데이터 제공 요청','서버 성능 데이터(CPU, 메모리) 주간 리포트 제공 요청합니다.'),
+        ('서비스 관련 DB 정보 수정 요청',      '서비스 이력 테이블에서 잘못 입력된 데이터 3건 수정 요청. 상세 내용 본문 참조.'),
+        ('경영관리 시스템 가이드 제공',         '신규 입사자 온보딩을 위한 경영관리 시스템 사용 가이드 및 매뉴얼 요청.'),
+        ('제조 라인 데이터 등록 처리',          '신규 제조 라인 코드 등록 및 초기 데이터 세팅 요청. 생산팀과 협의 완료됨.'),
+        ('공사 시스템 사용자 삭제 요청',        '퇴사자 계정 삭제 요청입니다. 총 2개 계정 처리 요망.'),
+        ('개발 환경 설정 안내 요청',            '개발 신규 입사자 로컬 환경 세팅 가이드 요청. Docker, DB 접속 정보 포함 필요.'),
+        ('Vietnam MRO 접속 속도 저하',          '베트남 사무소에서 MRO 시스템 접속 속도가 현저히 느립니다. 네트워크 점검 요청.'),
+        ('SDC 전용 기능 개선 요청',             '삼성디스플레이 사용자 전용 화면에서 필터 기능이 누락되어 있습니다. 개선 요청.'),
+    ]
+
+    today = _dt.now()
+    created = 0
+    with _gc() as conn:
+        for i, (title, content) in enumerate(samples):
+            cat    = cats[i % len(cats)]
+            status = statuses[i % len(statuses)]
+            pt     = proc_types[i % len(proc_types)] if proc_types else None
+            asn    = assignees[i % len(assignees)]
+            child  = next((c for c in child_cats if c['parent_id']==cat['id']), None)
+            date   = (today - _td(days=i*3)).strftime('%Y-%m-%d %H:%M:%S')
+            voc_no = f"VOC{today.strftime('%Y%m')}{i+1:04d}"
+
+            existing = conn.execute('SELECT id FROM vocs WHERE voc_number=?', (voc_no,)).fetchone()
+            if existing:
+                continue
+
+            conn.execute('''
+                INSERT INTO vocs (voc_number, title, content, category, process_type, status, assignee_id, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?)
+            ''', (
+                voc_no, title, content,
+                child['name'] if child else cat['name'],
+                pt['name'] if pt else '',
+                status['value'],
+                asn['id'],
+                date, date
+            ))
+            created += 1
+    return {'success': True, 'created': created}
 
 
 if __name__ == '__main__':

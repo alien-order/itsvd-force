@@ -161,20 +161,27 @@ def init_db():
             );
         ''')
         # Seed default type groups
-        for code, label, order in [('category','업무유형',1),('process_type','처리유형',2),('voc_status','VOC 상태',3)]:
+        for code, label, order in [('category','업무유형',1),('process_type','VOC유형',2),('voc_status','VOC 상태',3)]:
             try:
                 conn.execute('INSERT OR IGNORE INTO type_groups (code,label,sort_order) VALUES (?,?,?)',(code,label,order))
             except Exception:
                 pass
-        # Seed voc_status items
-        for name, value, order in [('접수','open',1),('처리중','in_progress',2),('해결','resolved',3),('종료','closed',4)]:
-            try:
-                conn.execute('INSERT OR IGNORE INTO type_items (group_code,name,value,sort_order) VALUES (?,?,?,?)',('voc_status',name,value,order))
-            except Exception:
-                pass
+        # Seed voc_status items only if the group is completely empty
+        existing_count = conn.execute(
+            "SELECT COUNT(*) FROM type_items WHERE group_code='voc_status'"
+        ).fetchone()[0]
+        if existing_count == 0:
+            for name, value, order in [('접수','open',1),('처리중','in_progress',2),('해결','resolved',3),('종료','closed',4)]:
+                try:
+                    conn.execute('INSERT INTO type_items (group_code,name,value,sort_order) VALUES (?,?,?,?)',('voc_status',name,value,order))
+                except Exception:
+                    pass
         conn.executescript('')  # flush
-        # 기존 '카테고리' 레이블을 '업무유형'으로 마이그레이션
+        # 마이그레이션: '카테고리' → '업무유형', '처리유형' → 'VOC유형'
         conn.execute("UPDATE type_groups SET label='업무유형' WHERE code='category' AND label='카테고리'")
+        conn.execute("UPDATE type_groups SET label='VOC유형' WHERE code='process_type' AND label='처리유형'")
+        # voc_type 그룹 제거 (process_type이 VOC유형으로 통합됨)
+        conn.execute("DELETE FROM type_groups WHERE code='voc_type'")
         # voc_info: VOC 부모 기본정보 테이블 (API vocInfo → 여기 저장)
         conn.execute('''
             CREATE TABLE IF NOT EXISTS voc_info (
@@ -221,6 +228,8 @@ def init_db():
             ('voc_notes',          'work_minutes',     'INTEGER DEFAULT 0'),
             ('voc_notes',          'note_type',        'TEXT DEFAULT "answer"'),
             ('knowledge',          'process_type',     'TEXT DEFAULT ""'),
+            ('knowledge',          'voc_type',         'TEXT DEFAULT ""'),
+            ('knowledge',          'sub_category',     'TEXT DEFAULT ""'),
             ('type_items',         'parent_id',        'INTEGER DEFAULT NULL'),
             ('assignees',          'knox_id',          'TEXT DEFAULT NULL'),
             ('assignees',          'ip_address',       'TEXT DEFAULT ""'),
@@ -234,14 +243,74 @@ def init_db():
                 conn.execute(f'ALTER TABLE {table} ADD COLUMN {col} {definition}')
             except Exception:
                 pass
-        # is_active 기본값: 아무것도 설정 안 된 경우에만 open/in_progress를 기본 활성으로 지정
-        active_count = conn.execute(
-            "SELECT COUNT(*) FROM type_items WHERE group_code='voc_status' AND is_active=1"
+        # type_items UNIQUE 제약 완화: (group_code, name) → (group_code, name, parent_id)로 마이그레이션
+        # 마커 테이블로 중복 실행 방지
+        marker = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='_ti_constraint_v2'"
         ).fetchone()[0]
-        if active_count == 0:
-            conn.execute(
-                "UPDATE type_items SET is_active=1 WHERE group_code='voc_status' AND value IN ('open','in_progress')"
+        if not marker:
+            try:
+                conn.execute('''
+                    CREATE TABLE type_items_v2 (
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        group_code  TEXT NOT NULL,
+                        name        TEXT NOT NULL,
+                        value       TEXT DEFAULT '',
+                        sort_order  INTEGER DEFAULT 0,
+                        created_at  TEXT DEFAULT (datetime('now','localtime')),
+                        parent_id   INTEGER DEFAULT NULL,
+                        show_as_tab INTEGER DEFAULT 0,
+                        is_active   INTEGER DEFAULT 0
+                    )
+                ''')
+                conn.execute('INSERT INTO type_items_v2 SELECT * FROM type_items')
+                conn.execute('DROP TABLE type_items')
+                conn.execute('ALTER TABLE type_items_v2 RENAME TO type_items')
+                conn.execute('CREATE TABLE _ti_constraint_v2 (done INTEGER DEFAULT 1)')
+            except Exception:
+                try:
+                    conn.execute('DROP TABLE IF EXISTS type_items_v2')
+                except Exception:
+                    pass
+
+        # assignee_categories: 담당자별 담당 업무유형 (parent category)
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS assignee_categories (
+                assignee_id INTEGER NOT NULL,
+                category_id INTEGER NOT NULL,
+                PRIMARY KEY (assignee_id, category_id),
+                FOREIGN KEY (assignee_id) REFERENCES assignees(id)
             )
+        ''')
+
+        # vacation_type_config: 휴가 유형별 배정 설정
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS vacation_type_config (
+                vacation_type  TEXT PRIMARY KEY,
+                time_start     TEXT DEFAULT '00:00',
+                time_end       TEXT DEFAULT '23:59',
+                n_rounds       INTEGER DEFAULT 0,
+                assign_during  INTEGER DEFAULT 0
+            )
+        ''')
+        for vt, ts, te in [('연차','00:00','23:59'), ('오전반차','00:00','12:00'), ('오후반차','13:00','23:59')]:
+            conn.execute(
+                'INSERT OR IGNORE INTO vacation_type_config (vacation_type,time_start,time_end) VALUES (?,?,?)',
+                (vt, ts, te)
+            )
+
+        # vacations: cat_counts 컬럼 추가
+        try:
+            conn.execute("ALTER TABLE vacations ADD COLUMN cat_counts TEXT DEFAULT '{}'")
+        except Exception:
+            pass
+
+        # voc_stage_info: stage_status → vocstatuscode (API 원본 키 그대로 사용)
+        try:
+            conn.execute('ALTER TABLE voc_stage_info RENAME COLUMN stage_status TO vocstatuscode')
+        except Exception:
+            pass
+
         # custom_menus table
         conn.execute('''
             CREATE TABLE IF NOT EXISTS custom_menus (
