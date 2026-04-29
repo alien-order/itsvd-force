@@ -67,6 +67,12 @@ def get_assignee_by_ip(ip):
     return dict(row) if row else None
 
 
+def update_avatar(assignee_id, b64_data):
+    with get_conn() as conn:
+        conn.execute('UPDATE assignees SET avatar=? WHERE id=?', (b64_data or '', assignee_id))
+    return {'success': True}
+
+
 def toggle_assignee(assignee_id):
     with get_conn() as conn:
         row = conn.execute('SELECT active FROM assignees WHERE id=?', (assignee_id,)).fetchone()

@@ -333,6 +333,7 @@ select.inp { cursor: pointer; }
 }
 .avatar.sm { width: 20px; height: 20px; font-size: 9px; border-radius: 5px; }
 .avatar.lg { width: 38px; height: 38px; font-size: 15px; border-radius: 10px; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
 
 /* ══════════════════════════════════════════════════════
    타임라인 · 기타
@@ -424,4 +425,30 @@ select.inp { cursor: pointer; }
   color: #94a3b8;
   font-weight: 400;
   margin-left: 5px;
+}
+
+/* ── VOC 상세 정보 표 ── */
+.voc-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.voc-detail-table th,
+.voc-detail-table td {
+  border: 1px solid #e2e8f0;
+  padding: 5px 8px;
+  vertical-align: middle;
+  line-height: 1.4;
+}
+.voc-detail-table th {
+  background: #f8fafc;
+  font-weight: 600;
+  color: #64748b;
+  white-space: nowrap;
+  width: 80px;
+  min-width: 60px;
+}
+.voc-detail-table td {
+  color: #1e293b;
+  word-break: break-all;
 }

@@ -62,10 +62,7 @@ def fetch_voc(voc_number):
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
-    # ── 부모 데이터 추출 (vocInfo)
-    parent_path = config.get('api_parent_data_path', '').strip()
-    parent_json = _extract_obj(json_data, parent_path) if parent_path else json_data
-
+    # ── 부모 데이터 추출 (각 매핑 경로는 API 응답 최상위 기준 전체 경로)
     field_map = _normalize_field_map(config.get('api_field_map', []))
     data = {'images': []}
     for item in field_map:
@@ -73,7 +70,7 @@ def fetch_voc(voc_number):
         json_path = item.get('path', '').strip()
         if not col or not json_path:
             continue
-        data[col] = _extract_json(parent_json, json_path)
+        data[col] = _extract_json(json_data, json_path)
 
     # ── 단계 데이터 추출 (vocInfoList)
     list_path        = config.get('api_list_path', '').strip()

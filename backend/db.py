@@ -175,7 +175,28 @@ def init_db():
         conn.executescript('')  # flush
         # 기존 '카테고리' 레이블을 '업무유형'으로 마이그레이션
         conn.execute("UPDATE type_groups SET label='업무유형' WHERE code='category' AND label='카테고리'")
-        # voc_stages 테이블 (VOC 단계별 정보)
+        # voc_info: VOC 부모 기본정보 테이블 (API vocInfo → 여기 저장)
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS voc_info (
+                id     INTEGER PRIMARY KEY AUTOINCREMENT,
+                voc_id INTEGER NOT NULL UNIQUE,
+                vocno  TEXT DEFAULT '',
+                FOREIGN KEY (voc_id) REFERENCES vocs(id)
+            )
+        ''')
+        # voc_stage_info: VOC 단계별 정보 테이블 (API vocInfoList → 여기 저장)
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS voc_stage_info (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                voc_id       INTEGER NOT NULL,
+                stage_index  INTEGER DEFAULT 0,
+                vocno        TEXT DEFAULT '',
+                uppervocno   TEXT DEFAULT '',
+                stage_status TEXT DEFAULT '',
+                FOREIGN KEY (voc_id) REFERENCES vocs(id)
+            )
+        ''')
+        # voc_stages: 이전 호환용 (사용 중단, voc_stage_info로 대체)
         conn.execute('''
             CREATE TABLE IF NOT EXISTS voc_stages (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -184,7 +205,6 @@ def init_db():
                 uppervocno   TEXT DEFAULT '',
                 stage_status TEXT DEFAULT '',
                 stage_data   TEXT DEFAULT '{}',
-                created_at   TEXT DEFAULT (datetime('now', 'localtime')),
                 FOREIGN KEY (voc_id) REFERENCES vocs(id)
             )
         ''')
@@ -199,10 +219,12 @@ def init_db():
             ('assignment_history', 'assignment_type',  'TEXT DEFAULT "auto"'),
             ('voc_notes',          'note_date',        'TEXT DEFAULT ""'),
             ('voc_notes',          'work_minutes',     'INTEGER DEFAULT 0'),
+            ('voc_notes',          'note_type',        'TEXT DEFAULT "answer"'),
             ('knowledge',          'process_type',     'TEXT DEFAULT ""'),
             ('type_items',         'parent_id',        'INTEGER DEFAULT NULL'),
             ('assignees',          'knox_id',          'TEXT DEFAULT NULL'),
             ('assignees',          'ip_address',       'TEXT DEFAULT ""'),
+            ('assignees',          'avatar',           'TEXT DEFAULT ""'),
             ('vocs',               'process_type',     'TEXT DEFAULT ""'),
             ('type_items',         'show_as_tab',      'INTEGER DEFAULT 0'),
             ('type_items',         'is_active',        'INTEGER DEFAULT 0'),

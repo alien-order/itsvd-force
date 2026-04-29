@@ -32,12 +32,12 @@ def get_similar_vocs(title, content, limit=5):
     return voc.get_similar(title, content, limit)
 
 @eel.expose
-def add_voc_note(voc_id, content, note_date='', work_minutes=0):
-    return voc.add_note(voc_id, content, note_date, work_minutes)
+def add_voc_note(voc_id, content, note_date='', work_minutes=0, note_type='answer'):
+    return voc.add_note(voc_id, content, note_date, work_minutes, note_type)
 
 @eel.expose
-def get_voc_notes(voc_id):
-    return voc.get_notes(voc_id)
+def get_voc_notes(voc_id, note_type=None):
+    return voc.get_notes(voc_id, note_type)
 
 @eel.expose
 def get_daily_report():
@@ -93,6 +93,10 @@ def update_assignee(assignee_id, name, knox_id='', ip_address=''):
 @eel.expose
 def get_assignee_by_ip(ip):
     return assignment.get_assignee_by_ip(ip)
+
+@eel.expose
+def update_assignee_avatar(assignee_id, b64_data):
+    return assignment.update_avatar(assignee_id, b64_data)
 
 @eel.expose
 def toggle_assignee(assignee_id):
@@ -401,6 +405,10 @@ def parse_voc_numbers_from_excel(filename, b64_data):
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
+
+@eel.expose
+def get_voc_info(voc_id):
+    return voc.get_voc_info(voc_id)
 
 @eel.expose
 def get_voc_stages(voc_id):

@@ -141,7 +141,7 @@
             :class="String(a.id)===filterAssigneeId?'bg-indigo-50':''">
             <td class="py-1.5 pr-4">
               <div class="flex items-center gap-1.5">
-                <div class="avatar sm">{{ a.name.charAt(0) }}</div>
+                <div class="avatar sm"><img v-if="a.avatar" :src="a.avatar"><span v-else>{{ a.name.charAt(0) }}</span></div>
                 <span class="font-medium text-slate-700">{{ a.name }}</span>
                 <span v-if="!a.active" class="text-slate-300">(비)</span>
               </div>

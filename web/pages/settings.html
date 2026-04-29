@@ -47,7 +47,14 @@
         <div v-for="a in assignees" :key="a.id"
           class="flex items-center gap-3 px-4 py-3 border-b border-slate-50 last:border-0"
           :class="!a.active?'opacity-55':''">
-          <div class="avatar">{{ a.name.charAt(0) }}</div>
+          <div class="avatar cursor-pointer relative group" @click="triggerAvatarUpload(a.id)" :title="'이미지 변경'">
+            <img v-if="a.avatar" :src="a.avatar">
+            <span v-else>{{ a.name.charAt(0) }}</span>
+            <div class="absolute inset-0 bg-black/30 rounded-[8px] opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+              <svg width="12" height="12" fill="white" viewBox="0 0 24 24"><path d="M3 17h18v2H3v-2zm8-2V7.83l-2.59 2.58L7 9l5-5 5 5-1.41 1.41L13 7.83V15h-2z"/></svg>
+            </div>
+          </div>
+          <input type="file" accept="image/*" class="hidden" :ref="el => avatarInputs[a.id] = el" @change="onAvatarFile(a, $event)">
           <div class="flex-1 min-w-0">
             <template v-if="editingAssigneeId===a.id">
               <div class="grid grid-cols-3 gap-2">
@@ -97,7 +104,7 @@
           <div v-for="(a,i) in turnOrder" :key="a.id"
             class="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 border border-slate-100">
             <span class="text-xs font-mono text-slate-400 w-5 text-center shrink-0">{{ i+1 }}</span>
-            <div class="avatar sm">{{ a.name.charAt(0) }}</div>
+            <div class="avatar sm"><img v-if="a.avatar" :src="a.avatar"><span v-else>{{ a.name.charAt(0) }}</span></div>
             <span class="text-sm font-medium text-slate-700 flex-1">{{ a.name }}</span>
             <span v-if="!a.active" class="text-xs text-slate-300">(비활성)</span>
             <span v-if="a.hold_turns" class="text-xs bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full">보류 {{ a.hold_turns }}</span>
@@ -162,7 +169,7 @@
         <div v-if="!vacations.length" class="text-sm text-slate-400 py-2 text-center">등록된 휴가가 없습니다</div>
         <div v-for="v in vacations" :key="v.id"
           :class="['flex items-center gap-3 py-2 border-b border-slate-50 last:border-0', v.is_past?'opacity-45':'']">
-          <div class="avatar sm">{{ (v.assignee_name||'?').charAt(0) }}</div>
+          <div class="avatar sm"><img v-if="v.avatar" :src="v.avatar"><span v-else>{{ (v.assignee_name||'?').charAt(0) }}</span></div>
           <span class="text-sm text-slate-700">{{ v.assignee_name }}</span>
           <span class="text-xs font-mono text-slate-500">{{ v.vacation_date }}</span>
           <span class="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{{ v.vacation_type }}</span>
@@ -339,11 +346,6 @@
           <span class="text-xs text-slate-400">(vocInfo)</span>
         </div>
         <div>
-          <label class="text-xs font-semibold text-slate-500 mb-1.5 block">부모 데이터 JSON 경로</label>
-          <input v-model="apiConfig.api_parent_data_path" type="text" placeholder="예: vocInfo  (비워두면 응답 루트 사용)" class="inp text-sm">
-          <p class="text-xs text-slate-400 mt-1">API 응답 JSON에서 부모 VOC 정보 객체의 경로입니다.</p>
-        </div>
-        <div>
           <div class="flex items-center justify-between mb-2">
             <div>
               <label class="text-xs font-semibold text-slate-500">부모 필드 매핑</label>
@@ -351,14 +353,15 @@
             </div>
             <button @click="addFieldMapping" class="btn btn-secondary text-xs px-3">+ 추가</button>
           </div>
+          <p class="text-xs text-slate-400 mb-2">
+            컬럼명은 <span class="font-mono bg-slate-100 px-1 rounded">vocs</span> 또는
+            <span class="font-mono bg-slate-100 px-1 rounded">voc_info</span> 테이블 중 존재하는 쪽에 저장됩니다.
+          </p>
           <div class="space-y-2">
             <div v-for="(m,i) in apiConfig.api_field_map" :key="i" class="flex gap-2 items-center">
-              <select v-model="m.col" class="inp text-xs py-1.5 flex-1">
-                <option value="">VOC 컬럼 선택</option>
-                <option v-for="c in vocColumns" :key="c" :value="c">{{ c }}</option>
-              </select>
+              <input v-model="m.col" type="text" placeholder="컬럼명 (예: title, vocno)" class="inp text-xs py-1.5 flex-1">
               <span class="text-xs text-slate-300 shrink-0">← JSON 경로</span>
-              <input v-model="m.path" type="text" placeholder="예: title" class="inp text-xs py-1.5 flex-1">
+              <input v-model="m.path" type="text" placeholder="예: vocInfo.title" class="inp text-xs py-1.5 flex-1">
               <button @click="apiConfig.api_field_map.splice(i,1)" class="btn btn-danger text-xs px-2">✕</button>
             </div>
             <div v-if="!apiConfig.api_field_map.length" class="text-xs text-slate-400 py-1.5">+ 추가를 눌러 매핑을 설정하세요.</div>
@@ -641,6 +644,31 @@ createApp({
       else alert(r.error);
     };
 
+    // ── 담당자 아바타 이미지 ────────────────────────────────────────
+    const avatarInputs = {};
+    const triggerAvatarUpload = (id) => { avatarInputs[id]?.click(); };
+    const resizeAvatar = (file) => new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const size = 80;
+        const canvas = document.createElement('canvas');
+        canvas.width = size; canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const s = Math.min(img.width, img.height);
+        ctx.drawImage(img, (img.width-s)/2, (img.height-s)/2, s, s, 0, 0, size, size);
+        resolve(canvas.toDataURL('image/jpeg', 0.88));
+      };
+      img.src = URL.createObjectURL(file);
+    });
+    const onAvatarFile = async (a, e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const b64 = await resizeAvatar(file);
+      await eel.update_assignee_avatar(a.id, b64)();
+      a.avatar = b64;
+      e.target.value = '';
+    };
+
     // ── 배정 관리 ────────────────────────────────────────────────
     const turnOrder    = ref([]);
     const rules        = ref([]);
@@ -802,7 +830,7 @@ createApp({
     // ── API 설정 ─────────────────────────────────────────────────
     const apiConfig    = ref({
       api_url_pattern:'', api_token:'',
-      api_parent_data_path:'', api_list_path:'', api_stage_status_col:'stage_status',
+      api_list_path:'', api_stage_status_col:'stage_status',
       api_field_map:[], api_child_field_map:[],
     });
     const vocColumns   = ref([]);
@@ -814,7 +842,6 @@ createApp({
       apiConfig.value = {
         api_url_pattern:      cfg.api_url_pattern      || '',
         api_token:            cfg.api_token             || '',
-        api_parent_data_path: cfg.api_parent_data_path || '',
         api_list_path:        cfg.api_list_path         || '',
         api_stage_status_col: cfg.api_stage_status_col  || 'stage_status',
         api_field_map:        cfg.api_field_map         || [],
@@ -939,6 +966,7 @@ createApp({
       tabs, activeTab, loading,
       // 담당자
       assignees, showAddAssignee, newAssignee, editingAssigneeId, editAssigneeForm,
+      avatarInputs, triggerAvatarUpload, onAvatarFile,
       addAssignee, startEditAssignee, saveAssignee, toggleAssignee, deleteAssignee,
       // 배정
       turnOrder, rules, vacations, showAddRule, newRule, categoryList,

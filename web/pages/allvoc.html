@@ -76,7 +76,7 @@
             <div class="text-sm font-medium text-slate-800 truncate">{{ v.title }}</div>
             <div class="flex items-center gap-2 mt-1">
               <span v-if="v.assignee_name" class="flex items-center gap-1 text-xs text-slate-500">
-                <span class="avatar sm">{{ v.assignee_name.charAt(0) }}</span>{{ v.assignee_name }}
+                <span class="avatar sm"><img v-if="v.assignee_avatar" :src="v.assignee_avatar"><span v-else>{{ v.assignee_name.charAt(0) }}</span></span>{{ v.assignee_name }}
               </span>
               <span v-else class="text-xs text-red-400 font-medium">미배정</span>
               <span class="text-xs text-slate-300 ml-auto">{{ v.created_at?.slice(0,10) }}</span>
@@ -115,7 +115,7 @@
           :class="['right-tab',rightTab==='stage:'+s.id?'active':'']">
           {{ s.stage_status || ('단계'+(s.stage_index+1)) }}
         </div>
-        <div @click="rightTab='answer'"  :class="['right-tab',rightTab==='answer'?'active':'']">답변<span v-if="vocNotes.length" class="ml-1 text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full">{{ vocNotes.length }}</span></div>
+        <div @click="rightTab='answer'"  :class="['right-tab',rightTab==='answer'?'active':'']">답변<span v-if="vocAnswers.length" class="ml-1 text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full">{{ vocAnswers.length }}</span></div>
         <div @click="rightTab='refTab'" :class="['right-tab',rightTab==='refTab'?'active':'']">레퍼런스<span v-if="vocLinks.length" class="ml-1 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">{{ vocLinks.length }}</span></div>
         <div @click="rightTab='memo'"   :class="['right-tab',rightTab==='memo'?'active':'']">메모</div>
         <div @click="rightTab='similar'" :class="['right-tab',rightTab==='similar'?'active':'']">유사 VOC</div>
@@ -123,12 +123,73 @@
       <div class="p-6">
 
         <!-- 내용 탭 -->
-        <div v-if="rightTab==='detail'" class="space-y-5">
-          <div class="card p-5">
-            <p class="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{{ selected.content }}</p>
-            <div v-if="vocImages.length" class="flex gap-2 flex-wrap mt-4 pt-4 border-t border-slate-100">
-              <img v-for="(p,i) in vocImages" :key="i" :src="p" class="w-20 h-20 object-cover rounded-lg border border-slate-200 cursor-pointer" @click="window.open(p,'_blank')">
-            </div>
+        <div v-if="rightTab==='detail'">
+
+          <!--
+          ══════════════════════════════════════════════════════════════
+          VOC 상세 정보 표 — 아래 라벨과 값을 직접 수정하세요.
+          vocInfo 객체: voc_info 테이블 컬럼 (API 부모 매핑 저장값)
+          selected 객체: vocs 테이블 컬럼 (title, content, status 등)
+
+          각 셀 구조:  <th>라벨</th><td>{{ vocInfo.컬럼명 }}</td>
+          한 행에 3쌍(6셀)씩 배치됩니다.
+          ══════════════════════════════════════════════════════════════
+          -->
+
+          <!-- ── 표 1: 기본정보 ── -->
+          <table class="voc-detail-table mb-2">
+            <tbody>
+              <tr>
+                <!-- ↓ 여기서부터 vocInfo.컬럼명으로 교체하세요 -->
+                <th>VOC번호</th>
+                <td>{{ vocInfo.vocno || selected.voc_number || '' }}</td>
+
+                <th><!-- 라벨2: 예) 요청자 --></th>
+                <td><!-- {{ vocInfo.컬럼2 }} --></td>
+
+                <th><!-- 라벨3 --></th>
+                <td><!-- {{ vocInfo.컬럼3 }} --></td>
+              </tr>
+              <!-- 행 추가 예시:
+              <tr>
+                <th>부서</th><td>{{ vocInfo.dept }}</td>
+                <th>연락처</th><td>{{ vocInfo.phone }}</td>
+                <th>이메일</th><td>{{ vocInfo.email }}</td>
+              </tr>
+              -->
+            </tbody>
+          </table>
+
+          <!-- ── 표 2: 추가정보 ── -->
+          <table class="voc-detail-table mb-2">
+            <tbody>
+              <tr>
+                <!-- ↓ 여기도 vocInfo.컬럼명으로 교체하세요 -->
+                <th><!-- 라벨4 --></th>
+                <td><!-- {{ vocInfo.컬럼4 }} --></td>
+
+                <th><!-- 라벨5 --></th>
+                <td><!-- {{ vocInfo.컬럼5 }} --></td>
+
+                <th><!-- 라벨6 --></th>
+                <td><!-- {{ vocInfo.컬럼6 }} --></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- ── 표 3: 내용 (5 컬럼 병합) ── -->
+          <table class="voc-detail-table mb-4">
+            <tbody>
+              <tr>
+                <!-- 내용 소스 교체: selected.content 또는 vocInfo.컬럼명 -->
+                <th style="width:80px;vertical-align:top">내용</th>
+                <td colspan="5" class="whitespace-pre-wrap leading-relaxed">{{ selected.content }}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div v-if="vocImages.length" class="flex gap-2 flex-wrap">
+            <img v-for="(p,i) in vocImages" :key="i" :src="p" class="w-20 h-20 object-cover rounded-lg border border-slate-200 cursor-pointer" @click="window.open(p,'_blank')">
           </div>
         </div>
 
@@ -154,9 +215,9 @@
 
         <!-- 답변 탭 -->
         <div v-if="rightTab==='answer'">
-          <div v-if="!vocNotes.length" class="empty-state h-48">등록된 답변/메모가 없습니다</div>
+          <div v-if="!vocAnswers.length" class="empty-state h-48">등록된 답변이 없습니다</div>
           <div v-else class="space-y-3">
-            <div v-for="n in [...vocNotes].reverse()" :key="n.id" class="card p-4">
+            <div v-for="n in [...vocAnswers].reverse()" :key="n.id" class="card p-4">
               <div class="flex items-center gap-2 mb-2 text-xs text-slate-500">
                 <span class="font-medium">{{ n.note_date||n.created_at?.slice(0,10) }}</span>
                 <span v-if="n.work_minutes" class="bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded">{{ n.work_minutes }}분</span>
@@ -210,8 +271,8 @@
             <textarea v-model="memoText" rows="3" placeholder="메모 내용..." class="inp text-sm mb-2"></textarea>
             <button @click="addNote" :disabled="!memoText.trim()" class="btn btn-primary text-sm w-full disabled:opacity-40">추가</button>
           </div>
-          <div v-if="vocNotes.length" class="space-y-3">
-            <div v-for="n in [...vocNotes].reverse()" :key="n.id" class="card p-4">
+          <div v-if="vocMemos.length" class="space-y-3">
+            <div v-for="n in [...vocMemos].reverse()" :key="n.id" class="card p-4">
               <div class="flex items-center gap-2 mb-2 text-xs text-slate-500">
                 <span class="font-medium">{{ n.note_date||n.created_at?.slice(0,10) }}</span>
                 <span v-if="n.work_minutes" class="bg-slate-100 px-1.5 py-0.5 rounded">{{ n.work_minutes }}분</span>
@@ -326,10 +387,12 @@ createApp({
     // VOC 상세
     const selected    = ref(null);
     const rightTab    = ref('detail');
-    const vocNotes    = ref([]);
+    const vocAnswers  = ref([]);
+    const vocMemos    = ref([]);
     const vocImages   = ref([]);
     const vocLinks    = ref([]);
     const vocStages   = ref([]);
+    const vocInfo     = ref({});
     const similarList = ref([]);
     const similarVocs = computed(() => similarList.value.filter(v=>v.id!==selected.value?.id));
     const memoDate    = ref(todayStr());
@@ -339,37 +402,32 @@ createApp({
     const kLinkResults = ref([]);
     let kTimer = null;
 
-    const stageTabItems = computed(() => (typeItems.value['voc_status']||[]).filter(x => x.show_as_tab));
-    const visibleStages = computed(() => {
-      if (!stageTabItems.value.length || !vocStages.value.length) return [];
-      const allowed = new Set([
-        ...stageTabItems.value.map(x => x.name),
-        ...stageTabItems.value.map(x => x.value),
-      ].filter(Boolean));
-      return vocStages.value.filter(s => allowed.has(s.stage_status));
-    });
+    const visibleStages = computed(() => vocStages.value);
 
     const openVoc = async (v) => {
       selected.value = {...v};
       rightTab.value = 'detail';
-      vocStages.value = [];
+      vocStages.value = []; vocInfo.value = {};
       memoDate.value = todayStr(); memoMinutes.value=''; memoText.value='';
       kLinkSearch.value=''; kLinkResults.value=[];
-      const [notes, imgs, links, stages] = await Promise.all([
-        eel.get_voc_notes(v.id)(),
+      const [answers, memos, imgs, links, stages, info] = await Promise.all([
+        eel.get_voc_notes(v.id, 'answer')(),
+        eel.get_voc_notes(v.id, 'memo')(),
         eel.get_voc_images(v.id)(),
         eel.get_voc_knowledge(v.id)(),
         eel.get_voc_stages(v.id)(),
+        eel.get_voc_info(v.id)(),
       ]);
-      vocNotes.value=notes; vocImages.value=imgs; vocLinks.value=links; vocStages.value=stages;
+      vocAnswers.value=answers; vocMemos.value=memos; vocImages.value=imgs; vocLinks.value=links;
+      vocStages.value=stages; vocInfo.value=info;
       similarList.value = await eel.get_similar_vocs(v.title, v.content, 5)();
     };
 
     const addNote = async () => {
       if (!memoText.value.trim()||!selected.value) return;
-      await eel.add_voc_note(selected.value.id, memoText.value, memoDate.value, parseInt(memoMinutes.value)||0)();
+      await eel.add_voc_note(selected.value.id, memoText.value, memoDate.value, parseInt(memoMinutes.value)||0, 'memo')();
       memoText.value=''; memoMinutes.value=''; memoDate.value=todayStr();
-      vocNotes.value = await eel.get_voc_notes(selected.value.id)();
+      vocMemos.value = await eel.get_voc_notes(selected.value.id, 'memo')();
     };
 
     const onKLinkSearch = () => {
@@ -423,7 +481,7 @@ createApp({
       filterSearch, filterStatus, filterAssigneeId, filterCategoryParent, filterCategoryChild, filterProcessType,
       filterDateFrom, filterDateTo, filterYear,
       vocList, loadVocs, debouncedLoad, onYearChange, onCategoryParentChange,
-      selected, rightTab, vocNotes, vocImages, vocLinks, vocStages, visibleStages, similarVocs,
+      selected, rightTab, vocAnswers, vocMemos, vocImages, vocLinks, vocStages, vocInfo, visibleStages, similarVocs,
       memoDate, memoMinutes, memoText, kLinkSearch, kLinkResults,
       openVoc, addNote,
       onKLinkSearch, linkKnowledge, unlinkKnowledge,

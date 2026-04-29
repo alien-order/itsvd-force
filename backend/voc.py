@@ -27,30 +27,69 @@ def _update_status_from_last_stage(voc_id, stage_status):
             )
 
 
-def save_voc_stages(voc_id, stages):
+def save_voc_info(voc_id, data):
+    _META = {'id', 'voc_id'}
     with get_conn() as conn:
-        conn.execute('DELETE FROM voc_stages WHERE voc_id=?', (voc_id,))
+        cols = {r['name'] for r in conn.execute('PRAGMA table_info(voc_info)').fetchall()}
+        row = {'voc_id': voc_id}
+        for key, val in data.items():
+            if key not in _META and key in cols:
+                row[key] = str(val or '').strip()
+        if len(row) <= 1:
+            return
+        col_names = list(row.keys())
+        placeholders = ','.join('?' * len(col_names))
+        updates = ', '.join(f'{c}=excluded.{c}' for c in col_names if c != 'voc_id')
+        conn.execute(
+            f'INSERT INTO voc_info ({",".join(col_names)}) VALUES ({placeholders}) '
+            f'ON CONFLICT(voc_id) DO UPDATE SET {updates}',
+            list(row.values())
+        )
+
+
+def get_voc_info(voc_id):
+    with get_conn() as conn:
+        row = conn.execute('SELECT * FROM voc_info WHERE voc_id=?', (voc_id,)).fetchone()
+    return dict(row) if row else {}
+
+
+def save_voc_stages(voc_id, stages):
+    _META = {'id', 'voc_id', 'stage_index', 'uppervocno', 'stage_status', 'created_at', 'vocno'}
+    with get_conn() as conn:
+        stage_cols = {r['name'] for r in conn.execute('PRAGMA table_info(voc_stage_info)').fetchall()}
+        conn.execute('DELETE FROM voc_stage_info WHERE voc_id=?', (voc_id,))
         for s in stages:
+            row = {
+                'voc_id':       voc_id,
+                'stage_index':  s.get('stage_index', 0),
+                'uppervocno':   s.get('uppervocno', ''),
+                'stage_status': s.get('stage_status', ''),
+            }
+            stage_data = s.get('stage_data', {})
+            if 'vocno' in stage_cols and 'vocno' in stage_data:
+                row['vocno'] = str(stage_data.get('vocno', '') or '')
+            for key, val in stage_data.items():
+                if key in stage_cols and key not in row:
+                    row[key] = str(val or '').strip()
+            col_names = [c for c in row.keys() if c in stage_cols]
+            vals = [row[c] for c in col_names]
             conn.execute(
-                'INSERT INTO voc_stages (voc_id, stage_index, uppervocno, stage_status, stage_data) VALUES (?,?,?,?,?)',
-                (voc_id, s.get('stage_index', 0), s.get('uppervocno', ''),
-                 s.get('stage_status', ''), _json.dumps(s.get('stage_data', {}), ensure_ascii=False))
+                f'INSERT INTO voc_stage_info ({",".join(col_names)}) VALUES ({",".join("?"*len(col_names))})',
+                vals
             )
 
 
 def get_voc_stages(voc_id):
+    _META = {'id', 'voc_id', 'stage_index', 'uppervocno', 'stage_status', 'vocno'}
     with get_conn() as conn:
         rows = conn.execute(
-            'SELECT * FROM voc_stages WHERE voc_id=? ORDER BY stage_index ASC',
+            'SELECT * FROM voc_stage_info WHERE voc_id=? ORDER BY stage_index ASC',
             (voc_id,)
         ).fetchall()
     result = []
     for r in rows:
         d = dict(r)
-        try:
-            d['stage_data'] = _json.loads(d['stage_data'])
-        except Exception:
-            d['stage_data'] = {}
+        d['stage_data'] = {k: v for k, v in d.items() if k not in _META}
         result.append(d)
     return result
 
@@ -106,13 +145,15 @@ def create_voc(data, stages=None):
             )
 
         row = conn.execute('''
-            SELECT v.*, a.name as assignee_name
+            SELECT v.*, a.name as assignee_name, a.avatar as assignee_avatar
             FROM vocs v LEFT JOIN assignees a ON v.assignee_id = a.id
             WHERE v.id = ?
         ''', (voc_id,)).fetchone()
 
     if images:
         image_search.save_voc_images(voc_id, voc_number or str(voc_id), images)
+
+    save_voc_info(voc_id, data)
 
     if stages:
         save_voc_stages(voc_id, stages)
@@ -123,7 +164,7 @@ def create_voc(data, stages=None):
 
 def get_vocs(status=None, search=None, assignee_id=None, category=None, date_from=None, date_to=None, category_parent=None, process_type=None):
     query = '''
-        SELECT v.*, a.name as assignee_name
+        SELECT v.*, a.name as assignee_name, a.avatar as assignee_avatar
         FROM vocs v LEFT JOIN assignees a ON v.assignee_id = a.id
         WHERE 1=1
     '''
@@ -226,13 +267,13 @@ def get_similar(title, content, limit=5, exclude_id=None):
     with get_conn() as conn:
         if exclude_id:
             rows = conn.execute('''
-                SELECT v.*, a.name as assignee_name
+                SELECT v.*, a.name as assignee_name, a.avatar as assignee_avatar
                 FROM vocs v LEFT JOIN assignees a ON v.assignee_id = a.id
                 WHERE v.id != ?
             ''', (exclude_id,)).fetchall()
         else:
             rows = conn.execute('''
-                SELECT v.*, a.name as assignee_name
+                SELECT v.*, a.name as assignee_name, a.avatar as assignee_avatar
                 FROM vocs v LEFT JOIN assignees a ON v.assignee_id = a.id
             ''').fetchall()
 
@@ -247,23 +288,29 @@ def get_similar(title, content, limit=5, exclude_id=None):
     return [r for _, r in scored[:limit]]
 
 
-def add_note(voc_id, content, note_date='', work_minutes=0):
+def add_note(voc_id, content, note_date='', work_minutes=0, note_type='answer'):
     if not content.strip():
         return {'success': False, 'error': '내용을 입력하세요.'}
     with get_conn() as conn:
         conn.execute(
-            'INSERT INTO voc_notes (voc_id, content, note_date, work_minutes) VALUES (?, ?, ?, ?)',
-            (voc_id, content.strip(), note_date or '', int(work_minutes) if work_minutes else 0)
+            'INSERT INTO voc_notes (voc_id, content, note_date, work_minutes, note_type) VALUES (?, ?, ?, ?, ?)',
+            (voc_id, content.strip(), note_date or '', int(work_minutes) if work_minutes else 0, note_type or 'answer')
         )
     return {'success': True}
 
 
-def get_notes(voc_id):
+def get_notes(voc_id, note_type=None):
     with get_conn() as conn:
-        rows = conn.execute(
-            'SELECT * FROM voc_notes WHERE voc_id = ? ORDER BY created_at',
-            (voc_id,)
-        ).fetchall()
+        if note_type:
+            rows = conn.execute(
+                'SELECT * FROM voc_notes WHERE voc_id=? AND note_type=? ORDER BY created_at',
+                (voc_id, note_type)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                'SELECT * FROM voc_notes WHERE voc_id=? ORDER BY created_at',
+                (voc_id,)
+            ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -335,7 +382,7 @@ def get_assignee_stats(date_from=None, date_to=None):
 
     with get_conn() as conn:
         asgns = conn.execute(
-            'SELECT id, name, active FROM assignees ORDER BY turn_order ASC, name ASC'
+            'SELECT id, name, active, avatar FROM assignees ORDER BY turn_order ASC, name ASC'
         ).fetchall()
         rows = conn.execute(f'''
             SELECT v.assignee_id, v.status, COUNT(*) as cnt
@@ -408,6 +455,8 @@ def update_from_sync(voc_id, data, stages=None):
                 f"UPDATE vocs SET {', '.join(fields)}, updated_at=datetime('now','localtime') WHERE id=?",
                 params
             )
+
+    save_voc_info(voc_id, data)
 
     if stages is not None:
         save_voc_stages(voc_id, stages)
