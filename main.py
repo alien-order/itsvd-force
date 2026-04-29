@@ -20,8 +20,8 @@ def get_voc_categories():
     return voc.get_categories()
 
 @eel.expose
-def create_voc(data):
-    return voc.create_voc(data)
+def create_voc(data, stages=None):
+    return voc.create_voc(data, stages or [])
 
 @eel.expose
 def update_voc_status(voc_id, status):
@@ -58,7 +58,7 @@ def sync_single_voc(voc_id):
     result = scraper.fetch_voc(voc_number)
     if not result['success']:
         return result
-    return voc.update_from_sync(voc_id, result['data'])
+    return voc.update_from_sync(voc_id, result['data'], result.get('stages'))
 
 @eel.expose
 def get_status_summary(assignee_id=None, date_from=None, date_to=None):
@@ -326,6 +326,14 @@ def delete_type_item(item_id):
 def update_type_item_order(order_list):
     return type_manager.update_item_order(order_list)
 
+@eel.expose
+def set_type_item_tab(item_id, show_as_tab):
+    return type_manager.set_show_as_tab(item_id, show_as_tab)
+
+@eel.expose
+def set_type_item_active(item_id, is_active):
+    return type_manager.set_is_active(item_id, is_active)
+
 
 # ── 커스텀 메뉴 ──────────────────────────────────────────────────
 @eel.expose
@@ -395,6 +403,10 @@ def parse_voc_numbers_from_excel(filename, b64_data):
 
 
 @eel.expose
+def get_voc_stages(voc_id):
+    return voc.get_voc_stages(voc_id)
+
+@eel.expose
 def batch_upsert_voc(voc_number):
     voc_number = str(voc_number).strip()
     if not voc_number:
@@ -406,15 +418,17 @@ def batch_upsert_voc(voc_number):
         result = scraper.fetch_voc(voc_number)
         if not result['success']:
             return {**result, 'action': 'failed'}
-        update_result = voc.update_from_sync(row['id'], result['data'])
+        stages = result.get('stages')
+        update_result = voc.update_from_sync(row['id'], result['data'], stages)
         return {**update_result, 'action': 'updated', 'voc_number': voc_number}
     else:
         result = scraper.fetch_voc(voc_number)
         if not result['success']:
             return {**result, 'action': 'failed'}
-        data = result['data']
+        data   = result['data']
+        stages = result.get('stages', [])
         data['voc_number'] = voc_number
-        create_result = voc.create_voc(data)
+        create_result = voc.create_voc(data, stages)
         return {**create_result, 'action': 'created', 'voc_number': voc_number}
 
 

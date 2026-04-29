@@ -1,4 +1,5 @@
 import re
+import json as _json
 from backend.db import get_conn
 from backend import assignment as _asgn
 from backend import image_search
@@ -11,7 +12,50 @@ _TYPE_NOTE = {
 }
 
 
-def create_voc(data):
+def _update_status_from_last_stage(voc_id, stage_status):
+    if not stage_status:
+        return
+    with get_conn() as conn:
+        item = conn.execute(
+            "SELECT value FROM type_items WHERE group_code='voc_status' AND (name=? OR value=?)",
+            (stage_status, stage_status)
+        ).fetchone()
+        if item:
+            conn.execute(
+                "UPDATE vocs SET status=?, updated_at=datetime('now','localtime') WHERE id=?",
+                (item['value'], voc_id)
+            )
+
+
+def save_voc_stages(voc_id, stages):
+    with get_conn() as conn:
+        conn.execute('DELETE FROM voc_stages WHERE voc_id=?', (voc_id,))
+        for s in stages:
+            conn.execute(
+                'INSERT INTO voc_stages (voc_id, stage_index, uppervocno, stage_status, stage_data) VALUES (?,?,?,?,?)',
+                (voc_id, s.get('stage_index', 0), s.get('uppervocno', ''),
+                 s.get('stage_status', ''), _json.dumps(s.get('stage_data', {}), ensure_ascii=False))
+            )
+
+
+def get_voc_stages(voc_id):
+    with get_conn() as conn:
+        rows = conn.execute(
+            'SELECT * FROM voc_stages WHERE voc_id=? ORDER BY stage_index ASC',
+            (voc_id,)
+        ).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d['stage_data'] = _json.loads(d['stage_data'])
+        except Exception:
+            d['stage_data'] = {}
+        result.append(d)
+    return result
+
+
+def create_voc(data, stages=None):
     title             = data.get('title', '').strip()
     content           = data.get('content', '').strip()
     category          = data.get('category', '').strip()
@@ -70,6 +114,10 @@ def create_voc(data):
     if images:
         image_search.save_voc_images(voc_id, voc_number or str(voc_id), images)
 
+    if stages:
+        save_voc_stages(voc_id, stages)
+        _update_status_from_last_stage(voc_id, stages[-1].get('stage_status', ''))
+
     return {'success': True, 'voc': dict(row), 'assign_info': assign_result}
 
 
@@ -82,7 +130,16 @@ def get_vocs(status=None, search=None, assignee_id=None, category=None, date_fro
     params = []
 
     if status == 'active':
-        query += " AND v.status IN ('open', 'in_progress')"
+        with get_conn() as _c:
+            _rows = _c.execute(
+                "SELECT value FROM type_items WHERE group_code='voc_status' AND is_active=1 AND value!=''"
+            ).fetchall()
+        _vals = [r['value'] for r in _rows]
+        if _vals:
+            query += f" AND v.status IN ({','.join('?'*len(_vals))})"
+            params.extend(_vals)
+        else:
+            query += " AND v.status IN ('open','in_progress')"
     elif status and status != 'all':
         query += ' AND v.status = ?'
         params.append(status)
@@ -331,7 +388,7 @@ def sync_statuses():
     return result
 
 
-def update_from_sync(voc_id, data):
+def update_from_sync(voc_id, data, stages=None):
     _EXCLUDE = {'id', 'created_at', 'updated_at', 'assignee_id', 'images'}
     with get_conn() as conn:
         col_rows  = conn.execute('PRAGMA table_info(vocs)').fetchall()
@@ -344,14 +401,21 @@ def update_from_sync(voc_id, data):
         fields.append(f'{key} = ?')
         params.append(str(val or '').strip())
 
-    if not fields:
+    if fields:
+        params.append(voc_id)
+        with get_conn() as conn:
+            conn.execute(
+                f"UPDATE vocs SET {', '.join(fields)}, updated_at=datetime('now','localtime') WHERE id=?",
+                params
+            )
+
+    if stages is not None:
+        save_voc_stages(voc_id, stages)
+        if stages:
+            _update_status_from_last_stage(voc_id, stages[-1].get('stage_status', ''))
+
+    if not fields and stages is None:
         return {'success': False, 'error': '업데이트할 데이터가 없습니다.'}
-    params.append(voc_id)
-    with get_conn() as conn:
-        conn.execute(
-            f"UPDATE vocs SET {', '.join(fields)}, updated_at=datetime('now','localtime') WHERE id=?",
-            params
-        )
     return {'success': True}
 
 

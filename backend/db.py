@@ -175,6 +175,19 @@ def init_db():
         conn.executescript('')  # flush
         # 기존 '카테고리' 레이블을 '업무유형'으로 마이그레이션
         conn.execute("UPDATE type_groups SET label='업무유형' WHERE code='category' AND label='카테고리'")
+        # voc_stages 테이블 (VOC 단계별 정보)
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS voc_stages (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                voc_id       INTEGER NOT NULL,
+                stage_index  INTEGER DEFAULT 0,
+                uppervocno   TEXT DEFAULT '',
+                stage_status TEXT DEFAULT '',
+                stage_data   TEXT DEFAULT '{}',
+                created_at   TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (voc_id) REFERENCES vocs(id)
+            )
+        ''')
         # migration: add new columns to existing tables
         migrations = [
             ('vocs',               'voc_number',       'TEXT DEFAULT ""'),
@@ -191,12 +204,22 @@ def init_db():
             ('assignees',          'knox_id',          'TEXT DEFAULT NULL'),
             ('assignees',          'ip_address',       'TEXT DEFAULT ""'),
             ('vocs',               'process_type',     'TEXT DEFAULT ""'),
+            ('type_items',         'show_as_tab',      'INTEGER DEFAULT 0'),
+            ('type_items',         'is_active',        'INTEGER DEFAULT 0'),
         ]
         for table, col, definition in migrations:
             try:
                 conn.execute(f'ALTER TABLE {table} ADD COLUMN {col} {definition}')
             except Exception:
                 pass
+        # is_active 기본값: 아무것도 설정 안 된 경우에만 open/in_progress를 기본 활성으로 지정
+        active_count = conn.execute(
+            "SELECT COUNT(*) FROM type_items WHERE group_code='voc_status' AND is_active=1"
+        ).fetchone()[0]
+        if active_count == 0:
+            conn.execute(
+                "UPDATE type_items SET is_active=1 WHERE group_code='voc_status' AND value IN ('open','in_progress')"
+            )
         # custom_menus table
         conn.execute('''
             CREATE TABLE IF NOT EXISTS custom_menus (

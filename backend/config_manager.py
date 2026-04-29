@@ -9,9 +9,13 @@ _DEFAULT_SELECTORS = {
 }
 
 DEFAULT = {
-    'api_url_pattern': '',
-    'api_token': '',
-    'api_field_map': [],  # list of {col, path}
+    'api_url_pattern':      '',
+    'api_token':            '',
+    'api_parent_data_path': '',
+    'api_list_path':        '',
+    'api_stage_status_col': 'stage_status',
+    'api_field_map':        [],
+    'api_child_field_map':  [],
 }
 
 
@@ -30,15 +34,21 @@ def get_config():
     with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
         data = json.load(f)
     config = dict(DEFAULT)
-    config['api_url_pattern'] = data.get('api_url_pattern', '')
-    config['api_token']       = data.get('api_token', '')
-    config['api_field_map']   = _normalize_field_map(data.get('api_field_map', []))
+    config['api_url_pattern']      = data.get('api_url_pattern', '')
+    config['api_token']            = data.get('api_token', '')
+    config['api_parent_data_path'] = data.get('api_parent_data_path', '')
+    config['api_list_path']        = data.get('api_list_path', '')
+    config['api_stage_status_col'] = data.get('api_stage_status_col', 'stage_status')
+    config['api_field_map']        = _normalize_field_map(data.get('api_field_map', []))
+    config['api_child_field_map']  = _normalize_field_map(data.get('api_child_field_map', []))
     return config
 
 
 def save_config(data):
     if 'api_field_map' in data:
         data['api_field_map'] = _normalize_field_map(data['api_field_map'])
+    if 'api_child_field_map' in data:
+        data['api_child_field_map'] = _normalize_field_map(data['api_child_field_map'])
     with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     return {'success': True}

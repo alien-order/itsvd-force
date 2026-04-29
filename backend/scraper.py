@@ -18,8 +18,28 @@ def _make_headers(config):
 def _extract_json(json_data, json_path):
     val = json_data
     for key in (json_path or '').strip().split('.'):
+        if not key:
+            continue
         val = val.get(key, '') if isinstance(val, dict) else ''
     return str(val).strip() if val is not None else ''
+
+
+def _extract_obj(json_data, path):
+    val = json_data
+    for key in (path or '').strip().split('.'):
+        if not key:
+            continue
+        val = val.get(key, {}) if isinstance(val, dict) else {}
+    return val if isinstance(val, dict) else {}
+
+
+def _extract_list(json_data, path):
+    val = json_data
+    for key in (path or '').strip().split('.'):
+        if not key:
+            continue
+        val = val.get(key, []) if isinstance(val, dict) else []
+    return val if isinstance(val, list) else []
 
 
 def fetch_voc(voc_number):
@@ -42,6 +62,10 @@ def fetch_voc(voc_number):
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
+    # ── 부모 데이터 추출 (vocInfo)
+    parent_path = config.get('api_parent_data_path', '').strip()
+    parent_json = _extract_obj(json_data, parent_path) if parent_path else json_data
+
     field_map = _normalize_field_map(config.get('api_field_map', []))
     data = {'images': []}
     for item in field_map:
@@ -49,11 +73,40 @@ def fetch_voc(voc_number):
         json_path = item.get('path', '').strip()
         if not col or not json_path:
             continue
-        data[col] = _extract_json(json_data, json_path)
+        data[col] = _extract_json(parent_json, json_path)
 
-    if not any(v for k, v in data.items() if k != 'images'):
+    # ── 단계 데이터 추출 (vocInfoList)
+    list_path        = config.get('api_list_path', '').strip()
+    child_field_map  = _normalize_field_map(config.get('api_child_field_map', []))
+    stage_status_col = (config.get('api_stage_status_col', '') or 'stage_status').strip()
+
+    stage_list = _extract_list(json_data, list_path) if list_path else []
+    stages = []
+    for i, stage_item in enumerate(stage_list):
+        if not isinstance(stage_item, dict):
+            continue
+        stage_data = {}
+        for m in child_field_map:
+            col       = m.get('col', '').strip()
+            json_path = m.get('path', '').strip()
+            if not col or not json_path:
+                continue
+            stage_data[col] = _extract_json(stage_item, json_path)
+
+        uppervocno   = str(stage_item.get('uppervocno', '') or '')
+        stage_status = str(stage_data.get(stage_status_col, '') or '')
+
+        stages.append({
+            'stage_index':  i,
+            'uppervocno':   uppervocno,
+            'stage_status': stage_status,
+            'stage_data':   stage_data,
+        })
+
+    if not any(v for k, v in data.items() if k != 'images') and not stages:
         return {'success': False, 'error': 'API 응답에서 데이터를 찾지 못했습니다. 필드 매핑을 확인하세요.'}
-    return {'success': True, 'data': data}
+
+    return {'success': True, 'data': data, 'stages': stages}
 
 
 # ── 상태 동기화 ─────────────────────────────────────────────────

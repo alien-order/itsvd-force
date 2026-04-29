@@ -110,6 +110,11 @@
       </div>
       <div class="right-tab-bar bg-white">
         <div @click="rightTab='detail'"  :class="['right-tab',rightTab==='detail'?'active':'']">내용</div>
+        <div v-for="s in visibleStages" :key="'tab:'+s.id"
+          @click="rightTab='stage:'+s.id"
+          :class="['right-tab',rightTab==='stage:'+s.id?'active':'']">
+          {{ s.stage_status || ('단계'+(s.stage_index+1)) }}
+        </div>
         <div @click="rightTab='answer'"  :class="['right-tab',rightTab==='answer'?'active':'']">답변<span v-if="vocNotes.length" class="ml-1 text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full">{{ vocNotes.length }}</span></div>
         <div @click="rightTab='refTab'" :class="['right-tab',rightTab==='refTab'?'active':'']">레퍼런스<span v-if="vocLinks.length" class="ml-1 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">{{ vocLinks.length }}</span></div>
         <div @click="rightTab='memo'"   :class="['right-tab',rightTab==='memo'?'active':'']">메모</div>
@@ -123,6 +128,26 @@
             <p class="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{{ selected.content }}</p>
             <div v-if="vocImages.length" class="flex gap-2 flex-wrap mt-4 pt-4 border-t border-slate-100">
               <img v-for="(p,i) in vocImages" :key="i" :src="p" class="w-20 h-20 object-cover rounded-lg border border-slate-200 cursor-pointer" @click="window.open(p,'_blank')">
+            </div>
+          </div>
+        </div>
+
+        <!-- 단계 탭들 -->
+        <div v-for="s in visibleStages" :key="'panel:'+s.id">
+          <div v-if="rightTab==='stage:'+s.id" class="space-y-3">
+            <div class="card p-5">
+              <div class="flex items-center gap-2 mb-4">
+                <span class="text-xs font-semibold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">{{ s.stage_status }}</span>
+                <span v-if="s.uppervocno" class="text-xs text-slate-400 font-mono">{{ s.uppervocno }}</span>
+              </div>
+              <div v-if="!Object.keys(s.stage_data).length" class="text-sm text-slate-400">데이터가 없습니다</div>
+              <div v-for="(val, key) in s.stage_data" :key="key" class="mb-4 last:mb-0">
+                <div class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">{{ key }}</div>
+                <div v-if="key==='content'||key==='내용'||key==='answer'||key==='답변'"
+                  v-html="renderContent(String(val||''))"
+                  class="text-sm text-slate-700 leading-relaxed prose-content"></div>
+                <div v-else class="text-sm text-slate-700 whitespace-pre-wrap">{{ val }}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -304,6 +329,7 @@ createApp({
     const vocNotes    = ref([]);
     const vocImages   = ref([]);
     const vocLinks    = ref([]);
+    const vocStages   = ref([]);
     const similarList = ref([]);
     const similarVocs = computed(() => similarList.value.filter(v=>v.id!==selected.value?.id));
     const memoDate    = ref(todayStr());
@@ -313,17 +339,29 @@ createApp({
     const kLinkResults = ref([]);
     let kTimer = null;
 
+    const stageTabItems = computed(() => (typeItems.value['voc_status']||[]).filter(x => x.show_as_tab));
+    const visibleStages = computed(() => {
+      if (!stageTabItems.value.length || !vocStages.value.length) return [];
+      const allowed = new Set([
+        ...stageTabItems.value.map(x => x.name),
+        ...stageTabItems.value.map(x => x.value),
+      ].filter(Boolean));
+      return vocStages.value.filter(s => allowed.has(s.stage_status));
+    });
+
     const openVoc = async (v) => {
       selected.value = {...v};
       rightTab.value = 'detail';
+      vocStages.value = [];
       memoDate.value = todayStr(); memoMinutes.value=''; memoText.value='';
       kLinkSearch.value=''; kLinkResults.value=[];
-      const [notes, imgs, links] = await Promise.all([
+      const [notes, imgs, links, stages] = await Promise.all([
         eel.get_voc_notes(v.id)(),
         eel.get_voc_images(v.id)(),
         eel.get_voc_knowledge(v.id)(),
+        eel.get_voc_stages(v.id)(),
       ]);
-      vocNotes.value=notes; vocImages.value=imgs; vocLinks.value=links;
+      vocNotes.value=notes; vocImages.value=imgs; vocLinks.value=links; vocStages.value=stages;
       similarList.value = await eel.get_similar_vocs(v.title, v.content, 5)();
     };
 
@@ -385,7 +423,7 @@ createApp({
       filterSearch, filterStatus, filterAssigneeId, filterCategoryParent, filterCategoryChild, filterProcessType,
       filterDateFrom, filterDateTo, filterYear,
       vocList, loadVocs, debouncedLoad, onYearChange, onCategoryParentChange,
-      selected, rightTab, vocNotes, vocImages, vocLinks, similarVocs,
+      selected, rightTab, vocNotes, vocImages, vocLinks, vocStages, visibleStages, similarVocs,
       memoDate, memoMinutes, memoText, kLinkSearch, kLinkResults,
       openVoc, addNote,
       onKLinkSearch, linkKnowledge, unlinkKnowledge,

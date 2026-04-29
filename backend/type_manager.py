@@ -92,3 +92,15 @@ def update_item_order(order_list):
         for item in order_list:
             conn.execute('UPDATE type_items SET sort_order=? WHERE id=?', (item['sort_order'], item['id']))
     return {'success': True}
+
+
+def set_show_as_tab(item_id, show_as_tab):
+    with get_conn() as conn:
+        conn.execute('UPDATE type_items SET show_as_tab=? WHERE id=?', (1 if show_as_tab else 0, item_id))
+    return {'success': True}
+
+
+def set_is_active(item_id, is_active):
+    with get_conn() as conn:
+        conn.execute('UPDATE type_items SET is_active=? WHERE id=?', (1 if is_active else 0, item_id))
+    return {'success': True}

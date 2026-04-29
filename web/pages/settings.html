@@ -277,6 +277,17 @@
                     </div>
                   </template>
                 </div>
+                <!-- VOC 상태 전용 체크박스들 -->
+                <template v-if="g.code==='voc_status'&&editingItemId!==item.id">
+                  <label class="flex items-center gap-1.5 text-xs text-slate-500 shrink-0 cursor-pointer select-none">
+                    <input type="checkbox" :checked="!!item.is_active" @change="setItemActive(item, $event.target.checked)" class="accent-emerald-500">
+                    처리중
+                  </label>
+                  <label class="flex items-center gap-1.5 text-xs text-slate-500 shrink-0 cursor-pointer select-none">
+                    <input type="checkbox" :checked="!!item.show_as_tab" @change="setItemTab(item, $event.target.checked)" class="accent-indigo-500">
+                    탭 표시
+                  </label>
+                </template>
                 <div class="flex gap-1 shrink-0" v-if="editingItemId!==item.id">
                   <button @click="moveItemUp(g.code,idx)" :disabled="idx===0" class="btn btn-secondary text-xs px-1.5 py-1 disabled:opacity-30">↑</button>
                   <button @click="moveItemDown(g.code,idx)" :disabled="idx===getFlatItems(g.code).length-1" class="btn btn-secondary text-xs px-1.5 py-1 disabled:opacity-30">↓</button>
@@ -304,7 +315,9 @@
           {{ savingConfig?'저장 중...':'저장' }}
         </button>
       </div>
-      <div class="card p-5 space-y-5 mb-4">
+
+      <!-- 기본 연결 -->
+      <div class="card p-5 space-y-4 mb-4">
         <div>
           <label class="text-xs font-semibold text-slate-500 mb-1.5 block">API URL 패턴</label>
           <input v-model="apiConfig.api_url_pattern" type="text" placeholder="https://api.example.com/voc/{number}" class="inp text-sm">
@@ -317,11 +330,24 @@
           </label>
           <input v-model="apiConfig.api_token" type="password" placeholder="토큰 값을 입력하세요" class="inp text-sm">
         </div>
+      </div>
+
+      <!-- 부모 데이터 (vocInfo) -->
+      <div class="card p-5 space-y-4 mb-4">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="text-sm font-semibold text-slate-700">부모 VOC 정보</span>
+          <span class="text-xs text-slate-400">(vocInfo)</span>
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-slate-500 mb-1.5 block">부모 데이터 JSON 경로</label>
+          <input v-model="apiConfig.api_parent_data_path" type="text" placeholder="예: vocInfo  (비워두면 응답 루트 사용)" class="inp text-sm">
+          <p class="text-xs text-slate-400 mt-1">API 응답 JSON에서 부모 VOC 정보 객체의 경로입니다.</p>
+        </div>
         <div>
           <div class="flex items-center justify-between mb-2">
             <div>
-              <label class="text-xs font-semibold text-slate-500">필드 매핑</label>
-              <p class="text-xs text-slate-400 mt-0.5">API 응답 JSON 경로를 VOC 컬럼에 매핑합니다. (예: <span class="font-mono">data.title</span> → title)</p>
+              <label class="text-xs font-semibold text-slate-500">부모 필드 매핑</label>
+              <p class="text-xs text-slate-400 mt-0.5">부모 데이터 → VOC 테이블 컬럼 매핑</p>
             </div>
             <button @click="addFieldMapping" class="btn btn-secondary text-xs px-3">+ 추가</button>
           </div>
@@ -332,13 +358,50 @@
                 <option v-for="c in vocColumns" :key="c" :value="c">{{ c }}</option>
               </select>
               <span class="text-xs text-slate-300 shrink-0">← JSON 경로</span>
-              <input v-model="m.path" type="text" placeholder="예: data.attributes.title" class="inp text-xs py-1.5 flex-1">
+              <input v-model="m.path" type="text" placeholder="예: title" class="inp text-xs py-1.5 flex-1">
               <button @click="apiConfig.api_field_map.splice(i,1)" class="btn btn-danger text-xs px-2">✕</button>
             </div>
-            <div v-if="!apiConfig.api_field_map.length" class="text-xs text-slate-400 py-1.5">필드 매핑이 없습니다. + 추가를 눌러 설정하세요.</div>
+            <div v-if="!apiConfig.api_field_map.length" class="text-xs text-slate-400 py-1.5">+ 추가를 눌러 매핑을 설정하세요.</div>
           </div>
         </div>
       </div>
+
+      <!-- 단계 데이터 (vocInfoList) -->
+      <div class="card p-5 space-y-4 mb-4">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="text-sm font-semibold text-slate-700">단계 목록</span>
+          <span class="text-xs text-slate-400">(vocInfoList)</span>
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-slate-500 mb-1.5 block">단계 목록 JSON 경로</label>
+          <input v-model="apiConfig.api_list_path" type="text" placeholder="예: vocInfoList" class="inp text-sm">
+          <p class="text-xs text-slate-400 mt-1">API 응답에서 단계 배열의 경로입니다. 각 항목은 <span class="font-mono bg-slate-100 px-1 rounded">uppervocno</span>로 부모와 연결됩니다.</p>
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-slate-500 mb-1.5 block">단계 상태 컬럼명</label>
+          <input v-model="apiConfig.api_stage_status_col" type="text" placeholder="stage_status" class="inp text-sm" style="max-width:200px">
+          <p class="text-xs text-slate-400 mt-1">아래 단계 필드 매핑에서 단계 상태를 나타내는 컬럼명입니다.</p>
+        </div>
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <label class="text-xs font-semibold text-slate-500">단계 필드 매핑</label>
+              <p class="text-xs text-slate-400 mt-0.5">각 단계 항목 → 저장 컬럼명 매핑</p>
+            </div>
+            <button @click="addChildFieldMapping" class="btn btn-secondary text-xs px-3">+ 추가</button>
+          </div>
+          <div class="space-y-2">
+            <div v-for="(m,i) in apiConfig.api_child_field_map" :key="i" class="flex gap-2 items-center">
+              <input v-model="m.col" type="text" placeholder="컬럼명 (예: stage_status)" class="inp text-xs py-1.5 flex-1">
+              <span class="text-xs text-slate-300 shrink-0">← JSON 경로</span>
+              <input v-model="m.path" type="text" placeholder="예: stageType" class="inp text-xs py-1.5 flex-1">
+              <button @click="apiConfig.api_child_field_map.splice(i,1)" class="btn btn-danger text-xs px-2">✕</button>
+            </div>
+            <div v-if="!apiConfig.api_child_field_map.length" class="text-xs text-slate-400 py-1.5">+ 추가를 눌러 매핑을 설정하세요.</div>
+          </div>
+        </div>
+      </div>
+
       <div v-if="configSaved" class="p-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">저장되었습니다.</div>
     </div>
 
@@ -712,6 +775,15 @@ createApp({
       await eel.delete_type_item(parentId)();
       await loadTypes();
     };
+    const setItemTab = async (item, checked) => {
+      await eel.set_type_item_tab(item.id, checked)();
+      await loadTypes();
+    };
+    const setItemActive = async (item, checked) => {
+      await eel.set_type_item_active(item.id, checked)();
+      await loadTypes();
+    };
+
     const moveItemUp = async (code, idx) => {
       const items = [...(typeItemsMap.value[code]||[])];
       if (idx===0) return;
@@ -728,17 +800,30 @@ createApp({
     };
 
     // ── API 설정 ─────────────────────────────────────────────────
-    const apiConfig    = ref({ api_url_pattern:'', api_token:'', api_field_map:[] });
+    const apiConfig    = ref({
+      api_url_pattern:'', api_token:'',
+      api_parent_data_path:'', api_list_path:'', api_stage_status_col:'stage_status',
+      api_field_map:[], api_child_field_map:[],
+    });
     const vocColumns   = ref([]);
     const savingConfig = ref(false);
     const configSaved  = ref(false);
 
     const loadApiConfig = async () => {
       const [cfg, cols] = await Promise.all([eel.get_config()(), eel.get_voc_columns()()]);
-      apiConfig.value = { ...cfg, api_field_map: cfg.api_field_map||[] };
+      apiConfig.value = {
+        api_url_pattern:      cfg.api_url_pattern      || '',
+        api_token:            cfg.api_token             || '',
+        api_parent_data_path: cfg.api_parent_data_path || '',
+        api_list_path:        cfg.api_list_path         || '',
+        api_stage_status_col: cfg.api_stage_status_col  || 'stage_status',
+        api_field_map:        cfg.api_field_map         || [],
+        api_child_field_map:  cfg.api_child_field_map   || [],
+      };
       vocColumns.value = cols;
     };
-    const addFieldMapping = () => { apiConfig.value.api_field_map.push({ col:'', path:'' }); };
+    const addFieldMapping      = () => { apiConfig.value.api_field_map.push({ col:'', path:'' }); };
+    const addChildFieldMapping = () => { apiConfig.value.api_child_field_map.push({ col:'', path:'' }); };
     const saveApiConfig = async () => {
       savingConfig.value = true;
       const r = await eel.save_config({ ...apiConfig.value })();
@@ -868,7 +953,8 @@ createApp({
       startEditItem, saveEditItem, deleteTypeItem, deleteParentItem,
       moveItemUp, moveItemDown,
       // API
-      apiConfig, vocColumns, savingConfig, configSaved, addFieldMapping, saveApiConfig,
+      apiConfig, vocColumns, savingConfig, configSaved, addFieldMapping, addChildFieldMapping, saveApiConfig,
+      setItemTab, setItemActive,
       // 메뉴
       menus, showAddMenu, newMenu, editingMenuId, editMenuForm,
       addMenu, startEditMenu, saveMenu, toggleMenu, deleteMenu,
