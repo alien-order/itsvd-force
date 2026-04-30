@@ -96,6 +96,9 @@ def fetch_voc(voc_number):
             'stage_index':   i,
             'uppervocno':    uppervocno,
             'vocstatuscode': status_code,
+            'vocstatusname': str(stage_item.get('vocstatusname', '') or ''),
+            'voctypename':   str(stage_item.get('voctypename', '') or ''),
+            'voctypecode':   str(stage_item.get('voctypecode', '') or ''),
             'stage_data':    stage_data,
         })
 

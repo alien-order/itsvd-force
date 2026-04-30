@@ -77,11 +77,18 @@
             <span :class="['badge','status-'+v.status]">{{ statusLabel[v.status] }}</span>
             <span v-if="v.requester" class="text-xs text-slate-500 ml-auto shrink-0">{{ v.requester }}</span>
           </div>
-          <!-- 업무유형 › 유형 -->
-          <div v-if="v.category" class="flex items-center gap-1 mt-0.5">
-            <span class="text-xs text-slate-400">{{ categoryParentMap[v.category] || v.category }}</span>
-            <span v-if="categoryParentMap[v.category]" class="text-xs text-slate-300">›</span>
-            <span v-if="categoryParentMap[v.category]" class="text-xs text-slate-400">{{ v.category }}</span>
+          <!-- 업무유형 › 하위유형 -->
+          <div v-if="v.sysbizcode || v.sysbizcode1 || v.category" class="flex items-center gap-1 mt-0.5">
+            <template v-if="v.sysbizcode || v.sysbizcode1">
+              <span class="text-xs text-slate-400">{{ v.sysbizcode || '-' }}</span>
+              <span v-if="v.sysbizcode1" class="text-xs text-slate-300">›</span>
+              <span v-if="v.sysbizcode1" class="text-xs text-slate-400">{{ v.sysbizcode1 }}</span>
+            </template>
+            <template v-else>
+              <span class="text-xs text-slate-400">{{ categoryParentMap[v.category] || v.category }}</span>
+              <span v-if="categoryParentMap[v.category]" class="text-xs text-slate-300">›</span>
+              <span v-if="categoryParentMap[v.category]" class="text-xs text-slate-400">{{ v.category }}</span>
+            </template>
             <span v-if="v.process_type" class="text-xs text-slate-300 ml-1">·</span>
             <span v-if="v.process_type" class="text-xs text-slate-400">{{ v.process_type }}</span>
           </div>
@@ -168,7 +175,7 @@
                 </tr>
                 <tr>
                   <th>VOC담당GBM</th><td>{{ vocInfo.gbmname || '-' }}</td>
-                  <th>업무유형</th><td>{{ vocInfo.bizNmDept || selected.category || '-' }}</td>
+                  <th>업무유형</th><td>{{ vocInfo.sysbizcode && vocInfo.sysbizcode1 ? (vocInfo.sysbizcode + ' › ' + vocInfo.sysbizcode1) : (vocInfo.sysbizcode || vocInfo.sysbizcode1 || vocInfo.bizNmDept || selected.category || '-') }}</td>
                   <th>세부진행상태</th><td>{{ vocInfo.vocstatusname || '-' }}</td>
                 </tr>
                 <tr>
@@ -294,10 +301,17 @@
                   <span :class="['badge','status-'+v.status]">{{ statusLabel[v.status] }}</span>
                   <span v-if="v.requester" class="text-xs text-slate-500 ml-auto shrink-0">{{ v.requester }}</span>
                 </div>
-                <div v-if="v.category" class="flex items-center gap-1 mt-0.5">
-                  <span class="text-xs text-slate-400">{{ categoryParentMap[v.category] || v.category }}</span>
-                  <span v-if="categoryParentMap[v.category]" class="text-xs text-slate-300">›</span>
-                  <span v-if="categoryParentMap[v.category]" class="text-xs text-slate-400">{{ v.category }}</span>
+                <div v-if="v.sysbizcode || v.sysbizcode1 || v.category" class="flex items-center gap-1 mt-0.5">
+                  <template v-if="v.sysbizcode || v.sysbizcode1">
+                    <span class="text-xs text-slate-400">{{ v.sysbizcode || '-' }}</span>
+                    <span v-if="v.sysbizcode1" class="text-xs text-slate-300">›</span>
+                    <span v-if="v.sysbizcode1" class="text-xs text-slate-400">{{ v.sysbizcode1 }}</span>
+                  </template>
+                  <template v-else>
+                    <span class="text-xs text-slate-400">{{ categoryParentMap[v.category] || v.category }}</span>
+                    <span v-if="categoryParentMap[v.category]" class="text-xs text-slate-300">›</span>
+                    <span v-if="categoryParentMap[v.category]" class="text-xs text-slate-400">{{ v.category }}</span>
+                  </template>
                 </div>
               </div>
             </div>

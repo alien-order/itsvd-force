@@ -237,6 +237,22 @@ def init_db():
             ('vocs',               'process_type',     'TEXT DEFAULT ""'),
             ('type_items',         'show_as_tab',      'INTEGER DEFAULT 0'),
             ('type_items',         'is_active',        'INTEGER DEFAULT 0'),
+            # voc_info 추가 컬럼
+            ('voc_info',           'sysbizcode',       'TEXT DEFAULT ""'),
+            ('voc_info',           'sysbizcode1',      'TEXT DEFAULT ""'),
+            ('voc_info',           'register_singleid','TEXT DEFAULT ""'),
+            ('voc_info',           'writer_singleid',  'TEXT DEFAULT ""'),
+            ('voc_info',           'endplandate',      'TEXT DEFAULT ""'),
+            ('voc_info',           'endplantime',      'TEXT DEFAULT ""'),
+            ('voc_info',           'vocstatuscode',    'TEXT DEFAULT ""'),
+            ('voc_info',           'voctypecode',      'TEXT DEFAULT ""'),
+            # voc_stage_info 추가 컬럼
+            ('voc_stage_info',     'vocstatusname',    'TEXT DEFAULT ""'),
+            ('voc_stage_info',     'voctypename',      'TEXT DEFAULT ""'),
+            ('voc_stage_info',     'voctypecode',      'TEXT DEFAULT ""'),
+            # vocs 추가 컬럼 (리스트 카드 표시용)
+            ('vocs',               'sysbizcode',       'TEXT DEFAULT ""'),
+            ('vocs',               'sysbizcode1',      'TEXT DEFAULT ""'),
         ]
         for table, col, definition in migrations:
             try:

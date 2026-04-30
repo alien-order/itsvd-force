@@ -54,7 +54,8 @@ def get_voc_info(voc_id):
 
 
 def save_voc_stages(voc_id, stages):
-    _META = {'id', 'voc_id', 'stage_index', 'uppervocno', 'vocstatuscode', 'created_at', 'vocno'}
+    _META = {'id', 'voc_id', 'stage_index', 'uppervocno', 'vocstatuscode', 'vocstatusname',
+             'voctypename', 'voctypecode', 'created_at', 'vocno'}
     with get_conn() as conn:
         stage_cols = {r['name'] for r in conn.execute('PRAGMA table_info(voc_stage_info)').fetchall()}
         conn.execute('DELETE FROM voc_stage_info WHERE voc_id=?', (voc_id,))
@@ -64,6 +65,9 @@ def save_voc_stages(voc_id, stages):
                 'stage_index':   s.get('stage_index', 0),
                 'uppervocno':    s.get('uppervocno', ''),
                 'vocstatuscode': s.get('vocstatuscode', ''),
+                'vocstatusname': s.get('vocstatusname', ''),
+                'voctypename':   s.get('voctypename', ''),
+                'voctypecode':   s.get('voctypecode', ''),
             }
             stage_data = s.get('stage_data', {})
             if 'vocno' in stage_cols and 'vocno' in stage_data:
@@ -80,7 +84,8 @@ def save_voc_stages(voc_id, stages):
 
 
 def get_voc_stages(voc_id):
-    _META = {'id', 'voc_id', 'stage_index', 'uppervocno', 'vocstatuscode', 'vocno'}
+    _META = {'id', 'voc_id', 'stage_index', 'uppervocno', 'vocstatuscode', 'vocstatusname',
+             'voctypename', 'voctypecode', 'vocno'}
     with get_conn() as conn:
         rows = conn.execute(
             'SELECT * FROM voc_stage_info WHERE voc_id=? ORDER BY stage_index ASC',
