@@ -169,8 +169,10 @@ def create_voc(data, stages=None):
 
 def get_vocs(status=None, search=None, assignee_id=None, category=None, date_from=None, date_to=None, category_parent=None, process_type=None):
     query = '''
-        SELECT v.*, a.name as assignee_name, a.avatar as assignee_avatar
+        SELECT v.*, a.name as assignee_name, a.avatar as assignee_avatar,
+               vi.bizNmDept
         FROM vocs v LEFT JOIN assignees a ON v.assignee_id = a.id
+                    LEFT JOIN voc_info vi ON vi.voc_id = v.id
         WHERE 1=1
     '''
     params = []

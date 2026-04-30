@@ -73,16 +73,19 @@
           </div>
           <!-- 담당자 + 상태 -->
           <div class="flex items-center gap-1.5">
-            <span class="text-xs font-mono text-slate-400 shrink-0">{{ v.voc_number ? v.voc_number.slice(-10) : ('#'+v.id) }}</span>
+            <span class="text-xs font-mono text-slate-400 shrink-0">{{ v.voc_number || ('#'+v.id) }}</span>
             <span :class="['badge','status-'+v.status]">{{ statusLabel[v.status] }}</span>
             <span v-if="v.requester" class="text-xs text-slate-500 ml-auto shrink-0">{{ v.requester }}</span>
           </div>
           <!-- 업무유형 › 하위유형 -->
-          <div v-if="v.sysbizcode || v.sysbizcode1 || v.category" class="flex items-center gap-1 mt-0.5">
+          <div v-if="v.sysbizcode || v.sysbizcode1 || v.bizNmDept || v.category" class="flex items-center gap-1 mt-0.5">
             <template v-if="v.sysbizcode || v.sysbizcode1">
               <span class="text-xs text-slate-400">{{ v.sysbizcode || '-' }}</span>
               <span v-if="v.sysbizcode1" class="text-xs text-slate-300">›</span>
               <span v-if="v.sysbizcode1" class="text-xs text-slate-400">{{ v.sysbizcode1 }}</span>
+            </template>
+            <template v-else-if="v.bizNmDept">
+              <span class="text-xs text-slate-400">{{ v.bizNmDept }}</span>
             </template>
             <template v-else>
               <span class="text-xs text-slate-400">{{ categoryParentMap[v.category] || v.category }}</span>
@@ -123,6 +126,7 @@
         <div @click="rightTab='refTab'" :class="['right-tab',rightTab==='refTab'?'active':'']">레퍼런스<span v-if="vocLinks.length" class="ml-1 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">{{ vocLinks.length }}</span></div>
         <div @click="rightTab='memo'"   :class="['right-tab',rightTab==='memo'?'active':'']">메모</div>
         <div @click="rightTab='similar'" :class="['right-tab',rightTab==='similar'?'active':'']">유사 VOC</div>
+        <div @click="rightTab='assign'"  :class="['right-tab',rightTab==='assign'?'active':'']">배정</div>
       </div>
       <div class="p-6">
 
@@ -136,12 +140,12 @@
               <colgroup><col style="width:16.67%"><col style="width:16.67%"><col style="width:16.67%"><col style="width:16.67%"><col style="width:16.67%"><col style="width:16.67%"></colgroup>
               <tbody>
                 <tr>
-                  <th>신청자종류</th><td>{{ vocInfo.registerorgname || '-' }}</td>
+                  <th>신청자총괄</th><td>{{ vocInfo.registerorgname || '-' }}</td>
                   <th>신청자GBM</th><td>{{ vocInfo.registergbmname || '-' }}</td>
                   <th>VOC번호</th><td class="mono">{{ vocInfo.vocno || selected.voc_number || '-' }}</td>
                 </tr>
                 <tr>
-                  <th>신청자</th><td>{{ vocInfo.registername || '-' }}</td>
+                  <th>신청자</th><td>{{ [vocInfo.registername, vocInfo.register_singleid].filter(x=>x).join(' / ') || '-' }}</td>
                   <th>신청자부서</th><td>{{ vocInfo.registerdeptname || '-' }}</td>
                   <th>신청일시</th><td>{{ formatVocDate(vocInfo.regdate, vocInfo.regtime) }}</td>
                 </tr>
@@ -176,7 +180,7 @@
                 <tr>
                   <th>VOC담당GBM</th><td>{{ vocInfo.gbmname || '-' }}</td>
                   <th>업무유형</th><td>{{ vocInfo.sysbizcode && vocInfo.sysbizcode1 ? (vocInfo.sysbizcode + ' › ' + vocInfo.sysbizcode1) : (vocInfo.sysbizcode || vocInfo.sysbizcode1 || vocInfo.bizNmDept || selected.category || '-') }}</td>
-                  <th>세부진행상태</th><td>{{ vocInfo.vocstatusname || '-' }}</td>
+                  <th>세부진행상태</th><td>{{ vocStatusMap[vocInfo.vocstatuscode] || vocInfo.vocstatusname || '-' }}</td>
                 </tr>
                 <tr>
                   <th>VOC유형</th><td colspan="5">{{ vocInfo.voctypename || '-' }}</td>
@@ -285,6 +289,31 @@
           </div>
         </div>
 
+        <!-- 배정 탭 -->
+        <div v-if="rightTab==='assign'" class="space-y-4">
+          <div class="card p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">담당자 변경</h3>
+            <div class="flex gap-2">
+              <select v-model="reassignId" class="inp text-sm flex-1">
+                <option value="">미배정</option>
+                <option v-for="a in assignees.filter(x=>x.active)" :key="a.id" :value="String(a.id)">{{ a.name }}</option>
+              </select>
+              <button @click="doReassign" :disabled="!reassignId" class="btn btn-secondary text-xs px-3 shrink-0 disabled:opacity-40">변경</button>
+            </div>
+          </div>
+          <div v-if="vocHistory.length" class="card p-5">
+            <h3 class="text-sm font-semibold text-slate-700 mb-3">배정 이력</h3>
+            <div class="space-y-2">
+              <div v-for="h in vocHistory" :key="h.id" class="flex items-start gap-2 text-xs text-slate-600 border-b border-slate-50 pb-2 last:border-0 last:pb-0">
+                <span class="text-slate-400 shrink-0">{{ h.assigned_at?.slice(0,16) }}</span>
+                <span class="font-medium shrink-0">{{ h.assignee_name }}</span>
+                <span class="text-slate-400">{{ h.note }}</span>
+              </div>
+            </div>
+          </div>
+          <div v-else class="text-xs text-slate-400 text-center py-4">배정 이력이 없습니다</div>
+        </div>
+
         <!-- 유사 VOC 탭 -->
         <div v-if="rightTab==='similar'">
           <div v-if="!similarVocs.length" class="empty-state h-48">유사한 VOC가 없습니다</div>
@@ -297,15 +326,18 @@
                   <span class="text-xs text-slate-300 shrink-0">{{ v.created_at?.slice(0,10) }}</span>
                 </div>
                 <div class="flex items-center gap-1.5">
-                  <span class="text-xs font-mono text-slate-400 shrink-0">{{ v.voc_number ? v.voc_number.slice(-10) : ('#'+v.id) }}</span>
+                  <span class="text-xs font-mono text-slate-400 shrink-0">{{ v.voc_number || ('#'+v.id) }}</span>
                   <span :class="['badge','status-'+v.status]">{{ statusLabel[v.status] }}</span>
                   <span v-if="v.requester" class="text-xs text-slate-500 ml-auto shrink-0">{{ v.requester }}</span>
                 </div>
-                <div v-if="v.sysbizcode || v.sysbizcode1 || v.category" class="flex items-center gap-1 mt-0.5">
+                <div v-if="v.sysbizcode || v.sysbizcode1 || v.bizNmDept || v.category" class="flex items-center gap-1 mt-0.5">
                   <template v-if="v.sysbizcode || v.sysbizcode1">
                     <span class="text-xs text-slate-400">{{ v.sysbizcode || '-' }}</span>
                     <span v-if="v.sysbizcode1" class="text-xs text-slate-300">›</span>
                     <span v-if="v.sysbizcode1" class="text-xs text-slate-400">{{ v.sysbizcode1 }}</span>
+                  </template>
+                  <template v-else-if="v.bizNmDept">
+                    <span class="text-xs text-slate-400">{{ v.bizNmDept }}</span>
                   </template>
                   <template v-else>
                     <span class="text-xs text-slate-400">{{ categoryParentMap[v.category] || v.category }}</span>
@@ -431,6 +463,8 @@ createApp({
     const vocLinks    = ref([]);
     const vocStages   = ref([]);
     const vocInfo     = ref({});
+    const vocHistory  = ref([]);
+    const reassignId  = ref('');
     const similarList = ref([]);
     const similarVocs = computed(() => similarList.value.filter(v=>v.id!==selected.value?.id));
     const memoDate    = ref(todayStr());
@@ -447,20 +481,33 @@ createApp({
     const openVoc = async (v) => {
       selected.value = {...v};
       rightTab.value = 'detail';
-      vocStages.value = []; vocInfo.value = {};
+      vocStages.value = []; vocInfo.value = {}; vocHistory.value = [];
+      reassignId.value = v.assignee_id ? String(v.assignee_id) : '';
       memoDate.value = todayStr(); memoMinutes.value=''; memoText.value='';
       kLinkSearch.value=''; kLinkResults.value=[];
-      const [answers, memos, imgs, links, stages, info] = await Promise.all([
+      const [answers, memos, imgs, links, stages, info, hist] = await Promise.all([
         eel.get_voc_notes(v.id, 'answer')(),
         eel.get_voc_notes(v.id, 'memo')(),
         eel.get_voc_images(v.id)(),
         eel.get_voc_knowledge(v.id)(),
         eel.get_voc_stages(v.id)(),
         eel.get_voc_info(v.id)(),
+        eel.get_assignment_history(v.id)(),
       ]);
       vocAnswers.value=answers; vocMemos.value=memos; vocImages.value=imgs; vocLinks.value=links;
-      vocStages.value=stages; vocInfo.value=info;
+      vocStages.value=stages; vocInfo.value=info; vocHistory.value=hist||[];
       similarList.value = await eel.get_similar_vocs(v.title, v.content, 5)();
+    };
+
+    const doReassign = async () => {
+      if (!reassignId.value || !selected.value) return;
+      const aid = parseInt(reassignId.value);
+      const result = await eel.reassign_voc(selected.value.id, aid, '', false)();
+      if (result.success) {
+        const a = assignees.value.find(x=>x.id===aid);
+        if (a) { selected.value.assignee_name=a.name; selected.value.assignee_id=a.id; }
+        vocHistory.value = await eel.get_assignment_history(selected.value.id)();
+      }
     };
 
     const addNote = async () => {
@@ -546,9 +593,9 @@ createApp({
       filterSearch, filterStatus, filterAssigneeId, filterCategoryParent, filterCategoryChild, filterProcessType,
       filterDateFrom, filterDateTo, filterYear,
       vocList, loadVocs, debouncedLoad, onYearChange, onCategoryParentChange,
-      selected, rightTab, vocMemos, vocImages, vocLinks, vocStages, vocInfo, visibleStages, firstStage, laterStages, similarVocs,
+      selected, rightTab, vocMemos, vocImages, vocLinks, vocStages, vocInfo, vocHistory, reassignId, visibleStages, firstStage, laterStages, similarVocs,
       memoDate, memoMinutes, memoText, kLinkSearch, kLinkResults,
-      openVoc, addNote,
+      openVoc, addNote, doReassign,
       onKLinkSearch, linkKnowledge, unlinkKnowledge, openKnowledgeDetail,
       renderContent, ddayLabel, ddayCls, todayStr, formatVocDate,
     };
