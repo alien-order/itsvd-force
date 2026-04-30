@@ -82,8 +82,8 @@
     <!-- VOC 목록 -->
     <div class="flex-1 overflow-y-auto">
       <div v-if="vocList.length===0" class="empty-state h-40">처리중인 VOC가 없습니다</div>
-      <div v-for="v in vocList" :key="v.id"
-        :class="['voc-item', selected?.id===v.id?'selected':'']" @click="openVoc(v)">
+      <div v-for="v in vocList" :key="v.vocno"
+        :class="['voc-item', selected?.vocno===v.vocno?'selected':'']" @click="openVoc(v)">
         <div class="flex-1 min-w-0">
           <!-- 제목 + D-day -->
           <div class="flex items-center gap-2 mb-0.5">
@@ -92,7 +92,7 @@
           </div>
           <!-- 담당자 + 상태 + 완료요청일 -->
           <div class="flex items-center gap-1.5">
-            <span class="text-xs font-mono text-slate-400 shrink-0">{{ v.voc_number || ('#'+v.id) }}</span>
+            <span class="text-xs font-mono text-slate-400 shrink-0">{{ v.vocno }}</span>
             <span :class="['badge','status-'+v.status]">{{ statusLabel[v.status] }}</span>
             <span v-if="v.due_date" class="text-xs text-slate-300 shrink-0">{{ v.due_date }}</span>
             <span v-if="v.requester" class="text-xs text-slate-500 ml-auto shrink-0">{{ v.requester }}</span>
@@ -139,8 +139,8 @@
     <template v-if="selected">
       <div class="bg-white border-b border-slate-200 px-5 py-3">
         <div class="flex items-center gap-2 mb-1 flex-wrap">
-          <a :href="'https://naver.com/'+(selected.voc_number||selected.id)" target="_blank"
-             class="text-xs font-mono bg-slate-100 px-2 py-0.5 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 cursor-pointer">{{ selected.voc_number||('#'+selected.id) }}</a>
+          <a :href="'https://naver.com/'+selected.vocno" target="_blank"
+             class="text-xs font-mono bg-slate-100 px-2 py-0.5 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 cursor-pointer">{{ selected.vocno }}</a>
           <span v-if="selected.priority&&selected.priority!=='normal'" :class="['badge','priority-'+selected.priority]">{{ priorityLabel[selected.priority] }}</span>
           <span :class="['badge','status-'+selected.status]">{{ statusLabel[selected.status] }}</span>
           <span v-if="selected.category" class="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded">{{ selected.category }}</span>
@@ -170,7 +170,7 @@
                 <tr>
                   <th>신청자총괄</th><td>{{ vocInfo.registerorgname || '-' }}</td>
                   <th>신청자GBM</th><td>{{ vocInfo.registergbmname || '-' }}</td>
-                  <th>VOC번호</th><td class="mono">{{ vocInfo.vocno || selected.voc_number || '-' }}</td>
+                  <th>VOC번호</th><td class="mono">{{ vocInfo.vocno || selected.vocno || '-' }}</td>
                 </tr>
                 <tr>
                   <th>신청자</th><td>{{ [vocInfo.registername, vocInfo.register_singleid].filter(x=>x).join(' / ') || '-' }}</td>
@@ -323,7 +323,7 @@
         <div v-if="rightTab==='similar'">
           <div v-if="!similarVocs.length" class="empty-state h-48">유사한 과거 VOC가 없습니다</div>
           <div v-else class="space-y-1">
-            <div v-for="v in similarVocs" :key="v.id" @click="openVoc(v)"
+            <div v-for="v in similarVocs" :key="v.vocno" @click="openVoc(v)"
                  class="voc-item cursor-pointer hover:border-blue-200">
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 mb-0.5">
@@ -331,7 +331,7 @@
                   <span class="text-xs text-slate-300 shrink-0">{{ v.created_at?.slice(0,10) }}</span>
                 </div>
                 <div class="flex items-center gap-1.5">
-                  <span class="text-xs font-mono text-slate-400 shrink-0">{{ v.voc_number || ('#'+v.id) }}</span>
+                  <span class="text-xs font-mono text-slate-400 shrink-0">{{ v.vocno }}</span>
                   <span :class="['badge','status-'+v.status]">{{ statusLabel[v.status] }}</span>
                   <span v-if="v.requester" class="text-xs text-slate-500 ml-auto shrink-0">{{ v.requester }}</span>
                 </div>
@@ -400,7 +400,7 @@
       </div>
       <div class="overflow-y-auto flex-1 px-5 py-2">
         <div v-if="!syncItems.length" class="text-sm text-slate-400 text-center py-8">처리중인 VOC가 없습니다</div>
-        <div v-for="item in syncItems" :key="item.id" class="flex items-center gap-3 py-2.5 border-b border-slate-50 last:border-0">
+        <div v-for="item in syncItems" :key="item.vocno" class="flex items-center gap-3 py-2.5 border-b border-slate-50 last:border-0">
           <div class="shrink-0 w-5 h-5 flex items-center justify-center">
             <svg v-if="item.status==='syncing'" class="animate-spin w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" class="opacity-25"/><path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" class="opacity-75"/></svg>
             <svg v-else-if="item.status==='done'" class="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
@@ -409,7 +409,7 @@
           </div>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2">
-              <span class="text-xs font-mono text-slate-400 shrink-0">{{ item.voc_number }}</span>
+              <span class="text-xs font-mono text-slate-400 shrink-0">{{ item.vocno }}</span>
               <span class="text-sm text-slate-700 truncate">{{ item.title }}</span>
             </div>
             <p v-if="item.error" class="text-xs text-red-500 mt-0.5 truncate">{{ item.error }}</p>
@@ -504,7 +504,7 @@ createApp({
     const vocInfo    = ref({});
     const reassignId = ref('');
     const textSimilar = ref([]);
-    const similarVocs = computed(() => textSimilar.value.filter(v=>v.id!==selected.value?.id));
+    const similarVocs = computed(() => textSimilar.value.filter(v=>v.vocno!==selected.value?.vocno));
 
     const visibleStages = computed(() => vocStages.value);
     const firstStage  = computed(() => vocStages.value[0]  ? vocStages.value[0].stage_data  : null);
@@ -555,13 +555,13 @@ createApp({
       memoDate.value   = todayStr(); memoMinutes.value=''; memoText.value='';
       kLinkSearch.value=''; kLinkResults.value=[];
       const [hist, answers, memos, imgs, links, stages, info] = await Promise.all([
-        eel.get_assignment_history(v.id)(),
-        eel.get_voc_notes(v.id, 'answer')(),
-        eel.get_voc_notes(v.id, 'memo')(),
-        eel.get_voc_images(v.id)(),
-        eel.get_voc_knowledge(v.id)(),
-        eel.get_voc_stages(v.id)(),
-        eel.get_voc_info(v.id)(),
+        eel.get_assignment_history(v.vocno)(),
+        eel.get_voc_notes(v.vocno, 'answer')(),
+        eel.get_voc_notes(v.vocno, 'memo')(),
+        eel.get_voc_images(v.vocno)(),
+        eel.get_voc_knowledge(v.vocno)(),
+        eel.get_voc_stages(v.vocno)(),
+        eel.get_voc_info(v.vocno)(),
       ]);
       vocHistory.value=hist; vocAnswers.value=answers; vocMemos.value=memos; vocImages.value=imgs; vocLinks.value=links; vocStages.value=stages; vocInfo.value=info||{};
       textSimilar.value = await eel.get_similar_vocs(v.title, v.content, 5)();
@@ -569,7 +569,7 @@ createApp({
 
     const updateStatus = async (status) => {
       if (!selected.value) return;
-      await eel.update_voc_status(selected.value.id, status)();
+      await eel.update_voc_status(selected.value.vocno, status)();
       selected.value.status = status;
       await loadVocs(); await loadWorkload();
     };
@@ -577,22 +577,22 @@ createApp({
     const doReassign = async () => {
       if (!reassignId.value || !selected.value) return;
       const aid = parseInt(reassignId.value);
-      const result = await eel.reassign_voc(selected.value.id, aid, '', false)();
+      const result = await eel.reassign_voc(selected.value.vocno, aid, '', false)();
       if (result.success) {
         const a = assignees.value.find(x=>x.id===aid);
         if (a) { selected.value.assignee_name=a.name; selected.value.assignee_id=a.id; }
-        vocHistory.value = await eel.get_assignment_history(selected.value.id)();
+        vocHistory.value = await eel.get_assignment_history(selected.value.vocno)();
         await loadWorkload();
       }
     };
 
     const autoAssignVoc = async () => {
       if (!selected.value) return;
-      const result = await eel.auto_assign_voc(selected.value.id)();
+      const result = await eel.auto_assign_voc(selected.value.vocno)();
       if (result?.success) {
         const a = assignees.value.find(x=>x.id===result.assign_info.assignee_id);
         if (a) { selected.value.assignee_name=a.name; selected.value.assignee_id=a.id; }
-        vocHistory.value = await eel.get_assignment_history(selected.value.id)();
+        vocHistory.value = await eel.get_assignment_history(selected.value.vocno)();
         await loadWorkload(); nextUp.value = await eel.get_next_up()();
         await loadVocs();
       } else alert(result?.error||'배정 실패');
@@ -600,9 +600,9 @@ createApp({
 
     const addNote = async () => {
       if (!memoText.value.trim()||!selected.value) return;
-      await eel.add_voc_note(selected.value.id, memoText.value, memoDate.value, parseInt(memoMinutes.value)||0, 'memo')();
+      await eel.add_voc_note(selected.value.vocno, memoText.value, memoDate.value, parseInt(memoMinutes.value)||0, 'memo')();
       memoText.value=''; memoMinutes.value=''; memoDate.value=todayStr();
-      vocMemos.value = await eel.get_voc_notes(selected.value.id, 'memo')();
+      vocMemos.value = await eel.get_voc_notes(selected.value.vocno, 'memo')();
     };
 
     const onKLinkSearch = () => {
@@ -614,13 +614,13 @@ createApp({
     };
     const linkKnowledge = async(kid)=>{
       if(!selected.value) return;
-      await eel.link_knowledge_to_voc(kid, selected.value.id)();
-      vocLinks.value = await eel.get_voc_knowledge(selected.value.id)();
+      await eel.link_knowledge_to_voc(kid, selected.value.vocno)();
+      vocLinks.value = await eel.get_voc_knowledge(selected.value.vocno)();
     };
     const unlinkKnowledge = async(kid)=>{
       if(!selected.value) return;
-      await eel.unlink_knowledge_from_voc(kid, selected.value.id)();
-      vocLinks.value = await eel.get_voc_knowledge(selected.value.id)();
+      await eel.unlink_knowledge_from_voc(kid, selected.value.vocno)();
+      vocLinks.value = await eel.get_voc_knowledge(selected.value.vocno)();
     };
 
     const openKnowledgeDetail = (kid) => {
@@ -657,7 +657,7 @@ createApp({
         lastCreated.value=result.voc; lastAssignInfo.value=result.assign_info;
         showFetchForm.value=false; previewData.value=null; vocNumInput.value=''; forcedAssigneeId.value='';
         await loadVocs(); await loadWorkload(); nextUp.value=await eel.get_next_up()();
-        const found = vocList.value.find(v=>v.id===result.voc.id);
+        const found = vocList.value.find(v=>v.vocno===result.voc.vocno);
         if (found) openVoc(found);
       } else alert(result.error);
     };
@@ -669,7 +669,7 @@ createApp({
     };
 
     const openSyncModal = () => {
-      syncItems.value = vocList.value.map(v=>({id:v.id,voc_number:v.voc_number||('#'+v.id),title:v.title,status:'pending',error:''}));
+      syncItems.value = vocList.value.map(v=>({vocno:v.vocno,title:v.title,status:'pending',error:''}));
       syncCurrent.value=0; syncRunning.value=false; syncModalOpen.value=true;
     };
     const runSync = async () => {
@@ -678,7 +678,7 @@ createApp({
       for (let i=0; i<syncItems.value.length; i++) {
         if (syncItems.value[i].status!=='pending') continue;
         syncItems.value[i]={...syncItems.value[i],status:'syncing'};
-        const r = await eel.sync_single_voc(syncItems.value[i].id)();
+        const r = await eel.sync_single_voc(syncItems.value[i].vocno)();
         done++; syncCurrent.value=done;
         syncItems.value[i]={...syncItems.value[i],status:r.success?'done':'failed',error:r.error||''};
       }

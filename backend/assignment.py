@@ -624,12 +624,14 @@ def get_workload():
         rows = conn.execute(f'''
             SELECT
                 a.id, a.name, a.active, a.turn_order, a.hold_turns, a.priority_next,
-                COUNT(CASE WHEN v.status IN ({in_active}) THEN 1 END) as open_count,
+                COUNT(CASE WHEN COALESCE(NULLIF(vi.vocstatuscode,''), vi.status) IN ({in_active}) THEN 1 END) as open_count,
                 0 as in_progress_count,
-                COUNT(CASE WHEN v.status NOT IN ({in_active}) AND v.status IS NOT NULL AND v.status!='' THEN 1 END) as done_count,
-                COUNT(v.id) as total_count
+                COUNT(CASE WHEN COALESCE(NULLIF(vi.vocstatuscode,''), vi.status) NOT IN ({in_active})
+                           AND COALESCE(NULLIF(vi.vocstatuscode,''), vi.status) IS NOT NULL
+                           AND COALESCE(NULLIF(vi.vocstatuscode,''), vi.status) != '' THEN 1 END) as done_count,
+                COUNT(vi.vocno) as total_count
             FROM assignees a
-            LEFT JOIN vocs v ON v.assignee_id = a.id
+            LEFT JOIN voc_info vi ON vi.assignee_id = a.id
             GROUP BY a.id
             ORDER BY a.turn_order ASC, a.name
         ''').fetchall()
@@ -650,29 +652,29 @@ def get_workload():
     return result
 
 
-def reassign(voc_id, assignee_id, note='', forced=False, assignment_type=None):
+def reassign(vocno, assignee_id, note='', forced=False, assignment_type=None):
     with get_conn() as conn:
         conn.execute(
-            "UPDATE vocs SET assignee_id=?, updated_at=datetime('now','localtime') WHERE id=?",
-            (assignee_id, voc_id)
+            "UPDATE voc_info SET assignee_id=?, updated_at=datetime('now','localtime') WHERE vocno=?",
+            (assignee_id, vocno)
         )
         atype = assignment_type or ('forced' if forced else 'manual')
         full_note = note or ('지정 배정' if forced else '재배정')
         if forced and not note:
             full_note += ' (다음 순번 1회 보류)'
         conn.execute(
-            'INSERT INTO assignment_history (voc_id, assignee_id, note, assignment_type) VALUES (?,?,?,?)',
-            (voc_id, assignee_id, full_note, atype)
+            'INSERT INTO assignment_history (vocno, assignee_id, note, assignment_type) VALUES (?,?,?,?)',
+            (vocno, assignee_id, full_note, atype)
         )
     if forced:
         add_hold(assignee_id)
     return {'success': True}
 
 
-def auto_assign_voc(voc_id):
+def auto_assign_voc(vocno):
     try:
         with get_conn() as conn:
-            row = conn.execute('SELECT category FROM vocs WHERE id=?', (voc_id,)).fetchone()
+            row = conn.execute('SELECT category FROM voc_info WHERE vocno=?', (vocno,)).fetchone()
             if not row:
                 return {'success': False, 'error': 'VOC not found'}
             category = row['category']
@@ -683,17 +685,17 @@ def auto_assign_voc(voc_id):
 
         with get_conn() as conn:
             conn.execute(
-                "UPDATE vocs SET assignee_id=?, updated_at=datetime('now','localtime') WHERE id=?",
-                (assign_result['assignee_id'], voc_id)
+                "UPDATE voc_info SET assignee_id=?, updated_at=datetime('now','localtime') WHERE vocno=?",
+                (assign_result['assignee_id'], vocno)
             )
             conn.execute(
-                'INSERT INTO assignment_history (voc_id, assignee_id, note, assignment_type) VALUES (?,?,?,?)',
-                (voc_id, assign_result['assignee_id'], '자동 배정 (라운드로빈)', 'auto')
+                'INSERT INTO assignment_history (vocno, assignee_id, note, assignment_type) VALUES (?,?,?,?)',
+                (vocno, assign_result['assignee_id'], '자동 배정 (라운드로빈)', 'auto')
             )
             for s in assign_result.get('skipped', []):
                 conn.execute(
-                    'INSERT INTO assignment_history (voc_id, assignee_id, note, assignment_type) VALUES (?,?,?,?)',
-                    (voc_id, s['id'], f'{s["name"]} 순번 보류', 'skipped')
+                    'INSERT INTO assignment_history (vocno, assignee_id, note, assignment_type) VALUES (?,?,?,?)',
+                    (vocno, s['id'], f'{s["name"]} 순번 보류', 'skipped')
                 )
 
         return {'success': True, 'assign_info': assign_result}
@@ -701,13 +703,13 @@ def auto_assign_voc(voc_id):
         return {'success': False, 'error': str(e)}
 
 
-def get_history(voc_id):
+def get_history(vocno):
     with get_conn() as conn:
         rows = conn.execute('''
             SELECT h.*, a.name as assignee_name
             FROM assignment_history h
             JOIN assignees a ON h.assignee_id = a.id
-            WHERE h.voc_id = ?
+            WHERE h.vocno = ?
             ORDER BY h.assigned_at
-        ''', (voc_id,)).fetchall()
+        ''', (vocno,)).fetchall()
     return [dict(r) for r in rows]

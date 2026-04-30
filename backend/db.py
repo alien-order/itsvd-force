@@ -376,6 +376,123 @@ def init_db():
                 except Exception:
                     pass
 
+        # Migration: voc_info becomes the main table keyed by vocno (TEXT PK)
+        _vocno_main_exists = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='_vocno_main_v1'"
+        ).fetchone()[0]
+        if not _vocno_main_exists:
+            try:
+                conn.execute('PRAGMA foreign_keys=OFF')
+                conn.execute('''
+                    CREATE TABLE voc_info_main (
+                        vocno             TEXT PRIMARY KEY,
+                        assignee_id       INTEGER,
+                        priority          TEXT DEFAULT 'normal',
+                        status            TEXT DEFAULT '',
+                        created_at        TEXT DEFAULT (datetime('now','localtime')),
+                        updated_at        TEXT DEFAULT (datetime('now','localtime')),
+                        title             TEXT DEFAULT '',
+                        content           TEXT DEFAULT '',
+                        category          TEXT DEFAULT '',
+                        requester         TEXT DEFAULT '',
+                        due_date          TEXT DEFAULT '',
+                        process_type      TEXT DEFAULT '',
+                        vocstatuscode     TEXT DEFAULT '',
+                        vocstatusnm       TEXT DEFAULT '',
+                        voctypecode       TEXT DEFAULT '',
+                        sysbizcode        TEXT DEFAULT '',
+                        sysbizcode1       TEXT DEFAULT '',
+                        register_singleid TEXT DEFAULT '',
+                        writer_singleid   TEXT DEFAULT '',
+                        endplandate       TEXT DEFAULT '',
+                        endplantime       TEXT DEFAULT '',
+                        bizNmDept         TEXT DEFAULT ''
+                    )
+                ''')
+                try:
+                    conn.execute('''
+                        INSERT OR IGNORE INTO voc_info_main
+                            (vocno, assignee_id, created_at, updated_at, title, content,
+                             category, requester, due_date, process_type, status)
+                        SELECT COALESCE(NULLIF(v.voc_number,''), CAST(v.id AS TEXT)),
+                               v.assignee_id, v.created_at, v.updated_at,
+                               COALESCE(v.title,''), COALESCE(v.content,''),
+                               COALESCE(v.category,''), COALESCE(v.requester,''),
+                               COALESCE(v.due_date,''), COALESCE(v.process_type,''),
+                               COALESCE(v.status,'')
+                        FROM vocs v
+                    ''')
+                except Exception:
+                    pass
+                conn.execute('DROP TABLE IF EXISTS voc_info')
+                conn.execute('ALTER TABLE voc_info_main RENAME TO voc_info')
+                conn.execute('DROP TABLE IF EXISTS voc_stage_info')
+                conn.execute('''
+                    CREATE TABLE voc_stage_info (
+                        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                        vocno         TEXT NOT NULL,
+                        stage_index   INTEGER DEFAULT 0,
+                        stage_vocno   TEXT DEFAULT '',
+                        uppervocno    TEXT DEFAULT '',
+                        vocstatuscode TEXT DEFAULT '',
+                        vocstatusname TEXT DEFAULT '',
+                        voctypename   TEXT DEFAULT '',
+                        voctypecode   TEXT DEFAULT ''
+                    )
+                ''')
+                conn.execute('DROP TABLE IF EXISTS voc_notes')
+                conn.execute('''
+                    CREATE TABLE voc_notes (
+                        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                        vocno        TEXT NOT NULL,
+                        content      TEXT NOT NULL,
+                        created_at   TEXT DEFAULT (datetime('now','localtime')),
+                        note_date    TEXT DEFAULT '',
+                        work_minutes INTEGER DEFAULT 0,
+                        note_type    TEXT DEFAULT 'answer'
+                    )
+                ''')
+                conn.execute('DROP TABLE IF EXISTS assignment_history')
+                conn.execute('''
+                    CREATE TABLE assignment_history (
+                        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                        vocno           TEXT NOT NULL,
+                        assignee_id     INTEGER NOT NULL,
+                        assigned_at     TEXT DEFAULT (datetime('now','localtime')),
+                        note            TEXT DEFAULT '',
+                        assignment_type TEXT DEFAULT 'auto'
+                    )
+                ''')
+                conn.execute('DROP TABLE IF EXISTS voc_images')
+                conn.execute('''
+                    CREATE TABLE voc_images (
+                        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                        vocno      TEXT NOT NULL,
+                        filename   TEXT NOT NULL,
+                        phash      TEXT NOT NULL,
+                        created_at TEXT DEFAULT (datetime('now','localtime'))
+                    )
+                ''')
+                conn.execute('DROP TABLE IF EXISTS voc_references')
+                conn.execute('''
+                    CREATE TABLE voc_references (
+                        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                        vocno        TEXT NOT NULL,
+                        knowledge_id INTEGER NOT NULL,
+                        created_at   TEXT DEFAULT (datetime('now','localtime')),
+                        UNIQUE(vocno, knowledge_id)
+                    )
+                ''')
+                conn.execute('DROP TABLE IF EXISTS voc_stages')
+                conn.execute('CREATE TABLE _vocno_main_v1 (done INTEGER DEFAULT 1)')
+                conn.execute('PRAGMA foreign_keys=ON')
+            except Exception:
+                try:
+                    conn.execute('DROP TABLE IF EXISTS voc_info_main')
+                    conn.execute('PRAGMA foreign_keys=ON')
+                except Exception:
+                    pass
+
         # custom_menus table
         conn.execute('''
             CREATE TABLE IF NOT EXISTS custom_menus (

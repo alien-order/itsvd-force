@@ -69,45 +69,47 @@ def get_categories():
     return [r[0] for r in rows]
 
 
-def link_voc(knowledge_id, voc_id):
+def link_voc(knowledge_id, vocno):
     try:
         with get_conn() as conn:
             conn.execute(
-                'INSERT OR IGNORE INTO voc_references (voc_id, knowledge_id) VALUES (?, ?)',
-                (voc_id, knowledge_id)
+                'INSERT OR IGNORE INTO voc_references (vocno, knowledge_id) VALUES (?, ?)',
+                (vocno, knowledge_id)
             )
         return {'success': True}
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
 
-def unlink_voc(knowledge_id, voc_id):
+def unlink_voc(knowledge_id, vocno):
     with get_conn() as conn:
         conn.execute(
-            'DELETE FROM voc_references WHERE voc_id = ? AND knowledge_id = ?',
-            (voc_id, knowledge_id)
+            'DELETE FROM voc_references WHERE vocno = ? AND knowledge_id = ?',
+            (vocno, knowledge_id)
         )
     return {'success': True}
 
 
-def get_voc_knowledge(voc_id):
+def get_voc_knowledge(vocno):
     with get_conn() as conn:
         rows = conn.execute('''
             SELECT k.* FROM knowledge k
             JOIN voc_references r ON r.knowledge_id = k.id
-            WHERE r.voc_id = ?
+            WHERE r.vocno = ?
             ORDER BY r.created_at DESC
-        ''', (voc_id,)).fetchall()
+        ''', (vocno,)).fetchall()
     return [dict(r) for r in rows]
 
 
 def get_knowledge_vocs(knowledge_id):
     with get_conn() as conn:
         rows = conn.execute('''
-            SELECT v.id, v.voc_number, v.title, v.status, a.name as assignee_name
+            SELECT vi.vocno, vi.title,
+                   COALESCE(NULLIF(vi.vocstatuscode,''), vi.status) as status,
+                   a.name as assignee_name
             FROM voc_references r
-            JOIN vocs v ON r.voc_id = v.id
-            LEFT JOIN assignees a ON v.assignee_id = a.id
+            JOIN voc_info vi ON r.vocno = vi.vocno
+            LEFT JOIN assignees a ON vi.assignee_id = a.id
             WHERE r.knowledge_id = ?
             ORDER BY r.created_at DESC
         ''', (knowledge_id,)).fetchall()

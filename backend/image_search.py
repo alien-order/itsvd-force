@@ -81,13 +81,13 @@ def extract_images(soup, img_selector, base_url, staging_key):
     return results
 
 
-def save_voc_images(voc_id, staging_key, image_data):
+def save_voc_images(vocno, staging_key, image_data):
     """staging 이미지를 영구 경로로 이동하고 DB에 저장."""
     if not image_data:
         return
 
     staging_dir = os.path.join(IMAGES_DIR, 'staging', str(staging_key))
-    perm_dir = _ensure_dir(os.path.join(IMAGES_DIR, str(voc_id)))
+    perm_dir = _ensure_dir(os.path.join(IMAGES_DIR, str(vocno)))
 
     with get_conn() as conn:
         for item in image_data:
@@ -99,39 +99,40 @@ def save_voc_images(voc_id, staging_key, image_data):
             except Exception:
                 continue
             conn.execute(
-                'INSERT INTO voc_images (voc_id, filename, phash) VALUES (?, ?, ?)',
-                (voc_id, item['filename'], item['phash'])
+                'INSERT INTO voc_images (vocno, filename, phash) VALUES (?, ?, ?)',
+                (vocno, item['filename'], item['phash'])
             )
 
 
-def get_image_paths(voc_id):
+def get_image_paths(vocno):
     with get_conn() as conn:
         rows = conn.execute(
-            'SELECT filename FROM voc_images WHERE voc_id = ?', (voc_id,)
+            'SELECT filename FROM voc_images WHERE vocno = ?', (vocno,)
         ).fetchall()
-    return [f'/images/{voc_id}/{row["filename"]}' for row in rows]
+    return [f'/images/{vocno}/{row["filename"]}' for row in rows]
 
 
-def find_similar(target_hashes, exclude_voc_id=None):
+def find_similar(target_hashes, exclude_vocno=None):
     """해시 목록을 기준으로 유사 이미지를 가진 과거 VOC 검색."""
     if not IMAGE_SUPPORT or not target_hashes:
         return []
 
     with get_conn() as conn:
         sql = '''
-            SELECT vi.voc_id, vi.phash, v.title, v.status, v.voc_number,
+            SELECT vi.vocno, vi.phash, v.title,
+                   COALESCE(NULLIF(v.vocstatuscode,''), v.status) as status,
                    v.due_date, v.content, a.name as assignee_name
             FROM voc_images vi
-            JOIN vocs v ON vi.voc_id = v.id
+            JOIN voc_info v ON vi.vocno = v.vocno
             LEFT JOIN assignees a ON v.assignee_id = a.id
         '''
         params = []
-        if exclude_voc_id:
-            sql += ' WHERE vi.voc_id != ?'
-            params.append(exclude_voc_id)
+        if exclude_vocno:
+            sql += ' WHERE vi.vocno != ?'
+            params.append(exclude_vocno)
         rows = conn.execute(sql, params).fetchall()
 
-    best = {}  # voc_id → {score, data}
+    best = {}  # vocno → {score, data}
     for row in rows:
         try:
             candidate = imagehash.hex_to_hash(row['phash'])
@@ -141,7 +142,7 @@ def find_similar(target_hashes, exclude_voc_id=None):
             try:
                 dist = imagehash.hex_to_hash(th) - candidate
                 if dist <= SIMILAR_THRESHOLD:
-                    vid = row['voc_id']
+                    vid = row['vocno']
                     score = SIMILAR_THRESHOLD - dist
                     if vid not in best or best[vid]['score'] < score:
                         best[vid] = {'score': score, 'data': dict(row)}

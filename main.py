@@ -24,20 +24,20 @@ def create_voc(data, stages=None):
     return voc.create_voc(data, stages or [])
 
 @eel.expose
-def update_voc_status(voc_id, status):
-    return voc.update_status(voc_id, status)
+def update_voc_status(vocno, status):
+    return voc.update_status(vocno, status)
 
 @eel.expose
 def get_similar_vocs(title, content, limit=5):
     return voc.get_similar(title, content, limit)
 
 @eel.expose
-def add_voc_note(voc_id, content, note_date='', work_minutes=0, note_type='answer'):
-    return voc.add_note(voc_id, content, note_date, work_minutes, note_type)
+def add_voc_note(vocno, content, note_date='', work_minutes=0, note_type='answer'):
+    return voc.add_note(vocno, content, note_date, work_minutes, note_type)
 
 @eel.expose
-def get_voc_notes(voc_id, note_type=None):
-    return voc.get_notes(voc_id, note_type)
+def get_voc_notes(vocno, note_type=None):
+    return voc.get_notes(vocno, note_type)
 
 @eel.expose
 def get_daily_report():
@@ -48,17 +48,12 @@ def sync_voc_statuses():
     return voc.sync_statuses()
 
 @eel.expose
-def sync_single_voc(voc_id):
-    from backend.db import get_conn
-    with get_conn() as conn:
-        row = conn.execute('SELECT voc_number FROM vocs WHERE id=?', (voc_id,)).fetchone()
-    if not row:
-        return {'success': False, 'error': 'VOC를 찾을 수 없습니다.'}
-    voc_number = row['voc_number'] or str(voc_id)
-    result = scraper.fetch_voc(voc_number)
+def sync_single_voc(vocno):
+    vocno = str(vocno).strip()
+    result = scraper.fetch_voc(vocno)
     if not result['success']:
         return result
-    return voc.update_from_sync(voc_id, result['data'], result.get('stages'))
+    return voc.update_from_sync(vocno, result['data'], result.get('stages'))
 
 @eel.expose
 def get_status_summary(assignee_id=None, date_from=None, date_to=None):
@@ -119,8 +114,8 @@ def get_workload():
     return assignment.get_workload()
 
 @eel.expose
-def reassign_voc(voc_id, assignee_id, note='', forced=False):
-    return assignment.reassign(voc_id, assignee_id, note, forced)
+def reassign_voc(vocno, assignee_id, note='', forced=False):
+    return assignment.reassign(vocno, assignee_id, note, forced)
 
 @eel.expose
 def update_turn_order(order_list):
@@ -143,12 +138,12 @@ def delete_assignment_rule(rule_id):
     return assignment.delete_assignment_rule(rule_id)
 
 @eel.expose
-def get_assignment_history(voc_id):
-    return assignment.get_history(voc_id)
+def get_assignment_history(vocno):
+    return assignment.get_history(vocno)
 
 @eel.expose
-def auto_assign_voc(voc_id):
-    return assignment.auto_assign_voc(voc_id)
+def auto_assign_voc(vocno):
+    return assignment.auto_assign_voc(vocno)
 
 @eel.expose
 def get_vacation_type_config():
@@ -195,8 +190,8 @@ def get_similar_by_images(hashes):
     return image_search.find_similar(hashes)
 
 @eel.expose
-def get_voc_images(voc_id):
-    return image_search.get_image_paths(voc_id)
+def get_voc_images(vocno):
+    return image_search.get_image_paths(vocno)
 
 @eel.expose
 def check_image_support():
@@ -229,16 +224,16 @@ def get_knowledge_categories():
     return knowledge.get_categories()
 
 @eel.expose
-def link_knowledge_to_voc(knowledge_id, voc_id):
-    return knowledge.link_voc(knowledge_id, voc_id)
+def link_knowledge_to_voc(knowledge_id, vocno):
+    return knowledge.link_voc(knowledge_id, vocno)
 
 @eel.expose
-def unlink_knowledge_from_voc(knowledge_id, voc_id):
-    return knowledge.unlink_voc(knowledge_id, voc_id)
+def unlink_knowledge_from_voc(knowledge_id, vocno):
+    return knowledge.unlink_voc(knowledge_id, vocno)
 
 @eel.expose
-def get_voc_knowledge(voc_id):
-    return knowledge.get_voc_knowledge(voc_id)
+def get_voc_knowledge(vocno):
+    return knowledge.get_voc_knowledge(vocno)
 
 @eel.expose
 def get_knowledge_vocs(knowledge_id):
@@ -427,37 +422,36 @@ def parse_voc_numbers_from_excel(filename, b64_data):
 
 
 @eel.expose
-def get_voc_info(voc_id):
-    return voc.get_voc_info(voc_id)
+def get_voc_info(vocno):
+    return voc.get_voc_info(vocno)
 
 @eel.expose
-def get_voc_stages(voc_id):
-    return voc.get_voc_stages(voc_id)
+def get_voc_stages(vocno):
+    return voc.get_voc_stages(vocno)
 
 @eel.expose
 def batch_upsert_voc(voc_number):
-    voc_number = str(voc_number).strip()
-    if not voc_number:
+    vocno = str(voc_number).strip()
+    if not vocno:
         return {'success': False, 'error': '번호 없음', 'action': 'skip'}
     from backend.db import get_conn as _gc
     with _gc() as conn:
-        row = conn.execute('SELECT id FROM vocs WHERE voc_number=?', (voc_number,)).fetchone()
+        row = conn.execute('SELECT vocno FROM voc_info WHERE vocno=?', (vocno,)).fetchone()
     if row:
-        result = scraper.fetch_voc(voc_number)
+        result = scraper.fetch_voc(vocno)
         if not result['success']:
             return {**result, 'action': 'failed'}
-        stages = result.get('stages')
-        update_result = voc.update_from_sync(row['id'], result['data'], stages)
-        return {**update_result, 'action': 'updated', 'voc_number': voc_number}
+        update_result = voc.update_from_sync(vocno, result['data'], result.get('stages'))
+        return {**update_result, 'action': 'updated', 'voc_number': vocno}
     else:
-        result = scraper.fetch_voc(voc_number)
+        result = scraper.fetch_voc(vocno)
         if not result['success']:
             return {**result, 'action': 'failed'}
         data   = result['data']
         stages = result.get('stages', [])
-        data['voc_number'] = voc_number
+        data['voc_number'] = vocno
         create_result = voc.create_voc(data, stages)
-        return {**create_result, 'action': 'created', 'voc_number': voc_number}
+        return {**create_result, 'action': 'created', 'voc_number': vocno}
 
 
 @eel.expose
@@ -516,12 +510,12 @@ def create_test_data():
             date   = (today - _td(days=i*3)).strftime('%Y-%m-%d %H:%M:%S')
             voc_no = f"VOC{today.strftime('%Y%m')}{i+1:04d}"
 
-            existing = conn.execute('SELECT id FROM vocs WHERE voc_number=?', (voc_no,)).fetchone()
+            existing = conn.execute('SELECT vocno FROM voc_info WHERE vocno=?', (voc_no,)).fetchone()
             if existing:
                 continue
 
             conn.execute('''
-                INSERT INTO vocs (voc_number, title, content, category, process_type, status, assignee_id, created_at, updated_at)
+                INSERT INTO voc_info (vocno, title, content, category, process_type, status, assignee_id, created_at, updated_at)
                 VALUES (?,?,?,?,?,?,?,?,?)
             ''', (
                 voc_no, title, content,

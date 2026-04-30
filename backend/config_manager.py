@@ -52,7 +52,7 @@ def save_config(data):
 
 def get_voc_columns():
     from backend.db import get_conn
-    _EXCLUDE = {'id', 'created_at', 'updated_at', 'assignee_id'}
+    _EXCLUDE = {'vocno', 'assignee_id', 'created_at', 'updated_at'}
     with get_conn() as conn:
-        rows = conn.execute('PRAGMA table_info(vocs)').fetchall()
+        rows = conn.execute('PRAGMA table_info(voc_info)').fetchall()
     return [r['name'] for r in rows if r['name'] not in _EXCLUDE]

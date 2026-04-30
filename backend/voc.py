@@ -1,5 +1,5 @@
 import re
-import json as _json
+from datetime import datetime as _dt
 from backend.db import get_conn
 from backend import assignment as _asgn
 from backend import image_search
@@ -12,7 +12,7 @@ _TYPE_NOTE = {
 }
 
 
-def _update_status_from_last_stage(voc_id, vocstatuscode):
+def _update_status_from_last_stage(vocno, vocstatuscode):
     if not vocstatuscode:
         return
     with get_conn() as conn:
@@ -20,18 +20,19 @@ def _update_status_from_last_stage(voc_id, vocstatuscode):
             "SELECT value FROM type_items WHERE group_code='voc_status' AND (name=? OR value=?)",
             (vocstatuscode, vocstatuscode)
         ).fetchone()
-        if item:
-            conn.execute(
-                "UPDATE vocs SET status=?, updated_at=datetime('now','localtime') WHERE id=?",
-                (item['value'], voc_id)
-            )
+        mapped = item['value'] if item else ''
+        conn.execute(
+            "UPDATE voc_info SET status=?, updated_at=datetime('now','localtime') WHERE vocno=?",
+            (mapped or vocstatuscode, vocno)
+        )
 
 
-def save_voc_info(voc_id, data):
-    _META = {'id', 'voc_id'}
+def save_voc_info(vocno, data):
+    _META = {'vocno', 'assignee_id', 'created_at', 'updated_at', 'images',
+             'forced_assignee_id', 'voc_number'}
     with get_conn() as conn:
         cols = {r['name'] for r in conn.execute('PRAGMA table_info(voc_info)').fetchall()}
-        row = {'voc_id': voc_id}
+        row = {'vocno': vocno}
         for key, val in data.items():
             if key not in _META and key in cols:
                 row[key] = str(val or '').strip()
@@ -39,29 +40,29 @@ def save_voc_info(voc_id, data):
             return
         col_names = list(row.keys())
         placeholders = ','.join('?' * len(col_names))
-        updates = ', '.join(f'{c}=excluded.{c}' for c in col_names if c != 'voc_id')
+        updates = ', '.join(f'{c}=excluded.{c}' for c in col_names if c != 'vocno')
         conn.execute(
             f'INSERT INTO voc_info ({",".join(col_names)}) VALUES ({placeholders}) '
-            f'ON CONFLICT(voc_id) DO UPDATE SET {updates}',
+            f'ON CONFLICT(vocno) DO UPDATE SET {updates}',
             list(row.values())
         )
 
 
-def get_voc_info(voc_id):
+def get_voc_info(vocno):
     with get_conn() as conn:
-        row = conn.execute('SELECT * FROM voc_info WHERE voc_id=?', (voc_id,)).fetchone()
+        row = conn.execute('SELECT * FROM voc_info WHERE vocno=?', (vocno,)).fetchone()
     return dict(row) if row else {}
 
 
-def save_voc_stages(voc_id, stages):
-    _META = {'id', 'voc_id', 'stage_index', 'uppervocno', 'vocstatuscode', 'vocstatusname',
-             'voctypename', 'voctypecode', 'created_at', 'vocno'}
+def save_voc_stages(vocno, stages):
+    _META = {'id', 'vocno', 'stage_index', 'uppervocno', 'vocstatuscode', 'vocstatusname',
+             'voctypename', 'voctypecode', 'created_at', 'stage_vocno'}
     with get_conn() as conn:
         stage_cols = {r['name'] for r in conn.execute('PRAGMA table_info(voc_stage_info)').fetchall()}
-        conn.execute('DELETE FROM voc_stage_info WHERE voc_id=?', (voc_id,))
+        conn.execute('DELETE FROM voc_stage_info WHERE vocno=?', (vocno,))
         for s in stages:
             row = {
-                'voc_id':        voc_id,
+                'vocno':         vocno,
                 'stage_index':   s.get('stage_index', 0),
                 'uppervocno':    s.get('uppervocno', ''),
                 'vocstatuscode': s.get('vocstatuscode', ''),
@@ -70,8 +71,8 @@ def save_voc_stages(voc_id, stages):
                 'voctypecode':   s.get('voctypecode', ''),
             }
             stage_data = s.get('stage_data', {})
-            if 'vocno' in stage_cols and 'vocno' in stage_data:
-                row['vocno'] = str(stage_data.get('vocno', '') or '')
+            if 'stage_vocno' in stage_cols and 'vocno' in stage_data:
+                row['stage_vocno'] = str(stage_data.get('vocno', '') or '')
             for key, val in stage_data.items():
                 if key in stage_cols and key not in row:
                     row[key] = str(val or '').strip()
@@ -83,19 +84,19 @@ def save_voc_stages(voc_id, stages):
             )
     if stages:
         last = stages[-1]
-        save_voc_info(voc_id, {
+        save_voc_info(vocno, {
             'vocstatuscode': last.get('vocstatuscode', ''),
             'vocstatusnm':   last.get('vocstatusname', ''),
         })
 
 
-def get_voc_stages(voc_id):
-    _META = {'id', 'voc_id', 'stage_index', 'uppervocno', 'vocstatuscode', 'vocstatusname',
-             'voctypename', 'voctypecode', 'vocno'}
+def get_voc_stages(vocno):
+    _META = {'id', 'vocno', 'stage_index', 'uppervocno', 'vocstatuscode', 'vocstatusname',
+             'voctypename', 'voctypecode', 'stage_vocno'}
     with get_conn() as conn:
         rows = conn.execute(
-            'SELECT * FROM voc_stage_info WHERE voc_id=? ORDER BY stage_index ASC',
-            (voc_id,)
+            'SELECT * FROM voc_stage_info WHERE vocno=? ORDER BY stage_index ASC',
+            (vocno,)
         ).fetchall()
     result = []
     for r in rows:
@@ -109,6 +110,10 @@ def create_voc(data, stages=None):
     images             = data.get('images', [])
     forced_assignee_id = data.get('forced_assignee_id')
     category           = str(data.get('category', '') or '').strip()
+    vocno              = str(data.get('voc_number', '') or '').strip()
+
+    if not vocno:
+        vocno = 'VOC_' + _dt.now().strftime('%Y%m%d%H%M%S%f')[:20]
 
     if forced_assignee_id:
         assign_result = {'assignee_id': int(forced_assignee_id), 'type': 'forced', 'skipped': []}
@@ -118,13 +123,14 @@ def create_voc(data, stages=None):
 
     assignee_id = assign_result['assignee_id']
 
-    _SKIP = {'id', 'created_at', 'updated_at', 'assignee_id', 'images', 'forced_assignee_id'}
+    _SKIP = {'vocno', 'assignee_id', 'created_at', 'updated_at',
+             'images', 'forced_assignee_id', 'voc_number', 'id', 'voc_id'}
 
     with get_conn() as conn:
-        valid_cols = {r['name'] for r in conn.execute('PRAGMA table_info(vocs)').fetchall()}
+        valid_cols = {r['name'] for r in conn.execute('PRAGMA table_info(voc_info)').fetchall()}
 
-        insert_cols = ['assignee_id']
-        insert_vals = [assignee_id]
+        insert_cols = ['vocno', 'assignee_id']
+        insert_vals = [vocno, assignee_id]
         for key, val in data.items():
             if key in _SKIP or key not in valid_cols:
                 continue
@@ -132,53 +138,50 @@ def create_voc(data, stages=None):
             insert_vals.append(str(val or '').strip())
 
         placeholders = ','.join('?' * len(insert_cols))
-        cur = conn.execute(
-            f"INSERT INTO vocs ({','.join(insert_cols)}) VALUES ({placeholders})",
+        conn.execute(
+            f"INSERT OR REPLACE INTO voc_info ({','.join(insert_cols)}) VALUES ({placeholders})",
             insert_vals
         )
-        voc_id = cur.lastrowid
 
         if assignee_id:
             conn.execute(
-                'INSERT INTO assignment_history (voc_id, assignee_id, note, assignment_type) VALUES (?,?,?,?)',
-                (voc_id, assignee_id,
+                'INSERT INTO assignment_history (vocno, assignee_id, note, assignment_type) VALUES (?,?,?,?)',
+                (vocno, assignee_id,
                  _TYPE_NOTE.get(assign_result['type'], '배정'),
                  assign_result['type'])
             )
 
         for skipped in assign_result.get('skipped', []):
             conn.execute(
-                'INSERT INTO assignment_history (voc_id, assignee_id, note, assignment_type) VALUES (?,?,?,?)',
-                (voc_id, skipped['id'],
+                'INSERT INTO assignment_history (vocno, assignee_id, note, assignment_type) VALUES (?,?,?,?)',
+                (vocno, skipped['id'],
                  f'{skipped["name"]} 순번 보류 (지정 배정 패널티)',
                  'skipped')
             )
 
         row = conn.execute('''
-            SELECT v.*, a.name as assignee_name, a.avatar as assignee_avatar
-            FROM vocs v LEFT JOIN assignees a ON v.assignee_id = a.id
-            WHERE v.id = ?
-        ''', (voc_id,)).fetchone()
+            SELECT vi.*, a.name as assignee_name, a.avatar as assignee_avatar
+            FROM voc_info vi LEFT JOIN assignees a ON vi.assignee_id = a.id
+            WHERE vi.vocno = ?
+        ''', (vocno,)).fetchone()
 
     if images:
-        voc_number = str(data.get('voc_number', '') or voc_id)
-        image_search.save_voc_images(voc_id, voc_number, images)
+        image_search.save_voc_images(vocno, vocno, images)
 
-    save_voc_info(voc_id, data)
+    save_voc_info(vocno, data)
 
     if stages:
-        save_voc_stages(voc_id, stages)
-        _update_status_from_last_stage(voc_id, stages[-1].get('vocstatuscode', ''))
+        save_voc_stages(vocno, stages)
+        _update_status_from_last_stage(vocno, stages[-1].get('vocstatuscode', ''))
 
     return {'success': True, 'voc': dict(row), 'assign_info': assign_result}
 
 
-def get_vocs(status=None, search=None, assignee_id=None, category=None, date_from=None, date_to=None, category_parent=None, process_type=None):
+def get_vocs(status=None, search=None, assignee_id=None, category=None,
+             date_from=None, date_to=None, category_parent=None, process_type=None):
     query = '''
-        SELECT v.*, a.name as assignee_name, a.avatar as assignee_avatar,
-               vi.bizNmDept
-        FROM vocs v LEFT JOIN assignees a ON v.assignee_id = a.id
-                    LEFT JOIN voc_info vi ON vi.voc_id = v.id
+        SELECT vi.*, a.name as assignee_name, a.avatar as assignee_avatar
+        FROM voc_info vi LEFT JOIN assignees a ON vi.assignee_id = a.id
         WHERE 1=1
     '''
     params = []
@@ -191,33 +194,33 @@ def get_vocs(status=None, search=None, assignee_id=None, category=None, date_fro
         _vals = [r['value'] for r in _rows]
         if _vals:
             ph = ','.join('?' * len(_vals))
-            query += f" AND COALESCE(NULLIF(vi.vocstatuscode,''), v.status) IN ({ph})"
+            query += f" AND COALESCE(NULLIF(vi.vocstatuscode,''), vi.status) IN ({ph})"
             params.extend(_vals)
         else:
-            query += " AND COALESCE(NULLIF(vi.vocstatuscode,''), v.status) IN ('open','in_progress')"
+            query += " AND COALESCE(NULLIF(vi.vocstatuscode,''), vi.status) IN ('open','in_progress')"
     elif status and status != 'all':
-        query += " AND COALESCE(NULLIF(vi.vocstatuscode,''), v.status) = ?"
+        query += " AND COALESCE(NULLIF(vi.vocstatuscode,''), vi.status) = ?"
         params.append(status)
 
     if search and search.strip():
-        query += ' AND (v.title LIKE ? OR v.content LIKE ? OR v.category LIKE ? OR v.voc_number LIKE ?)'
+        query += ' AND (vi.title LIKE ? OR vi.content LIKE ? OR vi.category LIKE ? OR vi.vocno LIKE ?)'
         s = f'%{search.strip()}%'
         params.extend([s, s, s, s])
 
     if date_from:
-        query += " AND DATE(v.created_at) >= ?"
+        query += " AND DATE(vi.created_at) >= ?"
         params.append(date_from)
 
     if date_to:
-        query += " AND DATE(v.created_at) <= ?"
+        query += " AND DATE(vi.created_at) <= ?"
         params.append(date_to)
 
     if category and category != 'all':
-        query += ' AND v.category = ?'
+        query += ' AND vi.category = ?'
         params.append(category)
     elif category_parent and category_parent != 'all':
         query += '''
-            AND v.category IN (
+            AND vi.category IN (
                 SELECT ti.name FROM type_items ti
                 WHERE ti.group_code='category' AND (
                     ti.name=? OR ti.parent_id=(
@@ -229,17 +232,17 @@ def get_vocs(status=None, search=None, assignee_id=None, category=None, date_fro
         params.extend([category_parent, category_parent])
 
     if process_type and process_type != 'all':
-        query += ' AND v.process_type = ?'
+        query += ' AND vi.process_type = ?'
         params.append(process_type)
 
     if assignee_id and assignee_id != 'all':
         if assignee_id == 'unassigned':
-            query += ' AND v.assignee_id IS NULL'
+            query += ' AND vi.assignee_id IS NULL'
         else:
-            query += ' AND v.assignee_id = ?'
+            query += ' AND vi.assignee_id = ?'
             params.append(int(assignee_id))
 
-    query += ' ORDER BY v.created_at DESC'
+    query += ' ORDER BY vi.created_at DESC'
 
     with get_conn() as conn:
         rows = conn.execute(query, params).fetchall()
@@ -257,16 +260,16 @@ def get_categories():
 def get_years():
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT DISTINCT strftime('%Y', created_at) as yr FROM vocs ORDER BY yr DESC"
+            "SELECT DISTINCT strftime('%Y', created_at) as yr FROM voc_info ORDER BY yr DESC"
         ).fetchall()
     return [r['yr'] for r in rows if r['yr']]
 
 
-def update_status(voc_id, status):
+def update_status(vocno, status):
     with get_conn() as conn:
         conn.execute(
-            "UPDATE vocs SET status = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
-            (status, voc_id)
+            "UPDATE voc_info SET status=?, vocstatuscode=?, updated_at=datetime('now','localtime') WHERE vocno=?",
+            (status, status, vocno)
         )
     return {'success': True}
 
@@ -275,7 +278,7 @@ def _strip_html(text):
     return re.sub(r'<[^>]+>', ' ', str(text or ''))
 
 
-def get_similar(title, content, limit=5, exclude_id=None):
+def get_similar(title, content, limit=5, exclude_vocno=None):
     text = f'{_strip_html(title)} {_strip_html(content)}'
     words = set(re.findall(r'[가-힣a-zA-Z0-9]{2,}', text))
 
@@ -283,16 +286,16 @@ def get_similar(title, content, limit=5, exclude_id=None):
         return []
 
     with get_conn() as conn:
-        if exclude_id:
+        if exclude_vocno:
             rows = conn.execute('''
-                SELECT v.*, a.name as assignee_name, a.avatar as assignee_avatar
-                FROM vocs v LEFT JOIN assignees a ON v.assignee_id = a.id
-                WHERE v.id != ?
-            ''', (exclude_id,)).fetchall()
+                SELECT vi.*, a.name as assignee_name, a.avatar as assignee_avatar
+                FROM voc_info vi LEFT JOIN assignees a ON vi.assignee_id = a.id
+                WHERE vi.vocno != ?
+            ''', (exclude_vocno,)).fetchall()
         else:
             rows = conn.execute('''
-                SELECT v.*, a.name as assignee_name, a.avatar as assignee_avatar
-                FROM vocs v LEFT JOIN assignees a ON v.assignee_id = a.id
+                SELECT vi.*, a.name as assignee_name, a.avatar as assignee_avatar
+                FROM voc_info vi LEFT JOIN assignees a ON vi.assignee_id = a.id
             ''').fetchall()
 
     scored = []
@@ -306,34 +309,38 @@ def get_similar(title, content, limit=5, exclude_id=None):
     return [r for _, r in scored[:limit]]
 
 
-def add_note(voc_id, content, note_date='', work_minutes=0, note_type='answer'):
+def add_note(vocno, content, note_date='', work_minutes=0, note_type='answer'):
     if not content.strip():
         return {'success': False, 'error': '내용을 입력하세요.'}
     with get_conn() as conn:
         conn.execute(
-            'INSERT INTO voc_notes (voc_id, content, note_date, work_minutes, note_type) VALUES (?, ?, ?, ?, ?)',
-            (voc_id, content.strip(), note_date or '', int(work_minutes) if work_minutes else 0, note_type or 'answer')
+            'INSERT INTO voc_notes (vocno, content, note_date, work_minutes, note_type) VALUES (?, ?, ?, ?, ?)',
+            (vocno, content.strip(), note_date or '', int(work_minutes) if work_minutes else 0, note_type or 'answer')
         )
     return {'success': True}
 
 
-def get_notes(voc_id, note_type=None):
+def get_notes(vocno, note_type=None):
     with get_conn() as conn:
         if note_type:
             rows = conn.execute(
-                'SELECT * FROM voc_notes WHERE voc_id=? AND note_type=? ORDER BY created_at',
-                (voc_id, note_type)
+                'SELECT * FROM voc_notes WHERE vocno=? AND note_type=? ORDER BY created_at',
+                (vocno, note_type)
             ).fetchall()
         else:
             rows = conn.execute(
-                'SELECT * FROM voc_notes WHERE voc_id=? ORDER BY created_at',
-                (voc_id,)
+                'SELECT * FROM voc_notes WHERE vocno=? ORDER BY created_at',
+                (vocno,)
             ).fetchall()
     return [dict(r) for r in rows]
 
 
 def get_status_summary(assignee_id=None, date_from=None, date_to=None):
-    query = 'SELECT status, COUNT(*) as cnt FROM vocs WHERE 1=1'
+    query = '''
+        SELECT COALESCE(NULLIF(vocstatuscode,''), status, 'unknown') as status,
+               COUNT(*) as cnt
+        FROM voc_info WHERE 1=1
+    '''
     params = []
     if assignee_id and assignee_id != 'all':
         if assignee_id == 'unassigned':
@@ -347,7 +354,7 @@ def get_status_summary(assignee_id=None, date_from=None, date_to=None):
     if date_to:
         query += ' AND DATE(created_at) <= ?'
         params.append(date_to)
-    query += ' GROUP BY status'
+    query += ' GROUP BY 1'
     with get_conn() as conn:
         rows = conn.execute(query, params).fetchall()
     by_status = {r['status']: r['cnt'] for r in rows}
@@ -372,7 +379,7 @@ def get_stats(period_type='monthly', date_from=None, date_to=None):
             SELECT {period_sql} as period,
                    COALESCE(NULLIF(TRIM(category), ''), '기타') as cat,
                    COUNT(*) as cnt
-            FROM vocs
+            FROM voc_info
             {where_clause}
             GROUP BY period, cat
             ORDER BY period DESC, cnt DESC
@@ -393,9 +400,9 @@ def get_stats(period_type='monthly', date_from=None, date_to=None):
 def get_assignee_stats(date_from=None, date_to=None):
     where, params = [], []
     if date_from:
-        where.append("DATE(v.created_at) >= ?"); params.append(date_from)
+        where.append("DATE(vi.created_at) >= ?"); params.append(date_from)
     if date_to:
-        where.append("DATE(v.created_at) <= ?"); params.append(date_to)
+        where.append("DATE(vi.created_at) <= ?"); params.append(date_to)
     extra = ("AND " + " AND ".join(where)) if where else ""
 
     with get_conn() as conn:
@@ -403,10 +410,12 @@ def get_assignee_stats(date_from=None, date_to=None):
             'SELECT id, name, active, avatar FROM assignees ORDER BY turn_order ASC, name ASC'
         ).fetchall()
         rows = conn.execute(f'''
-            SELECT v.assignee_id, v.status, COUNT(*) as cnt
-            FROM vocs v
-            WHERE v.assignee_id IS NOT NULL {extra}
-            GROUP BY v.assignee_id, v.status
+            SELECT vi.assignee_id,
+                   COALESCE(NULLIF(vi.vocstatuscode,''), vi.status) as status,
+                   COUNT(*) as cnt
+            FROM voc_info vi
+            WHERE vi.assignee_id IS NOT NULL {extra}
+            GROUP BY vi.assignee_id, 2
         ''', params).fetchall()
 
     counts = {}
@@ -435,9 +444,9 @@ def sync_statuses():
     from backend import scraper as _scraper
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT id, voc_number, status FROM vocs WHERE status NOT IN ('closed')"
+            "SELECT vocno, COALESCE(NULLIF(vocstatuscode,''), status) as status FROM voc_info"
         ).fetchall()
-    voc_list = [dict(r) for r in rows]
+    voc_list = [{'id': r['vocno'], 'voc_number': r['vocno'], 'status': r['status']} for r in rows]
 
     result = _scraper.sync_statuses(voc_list)
     if not result['success']:
@@ -447,16 +456,17 @@ def sync_statuses():
         with get_conn() as conn:
             for item in result['updated']:
                 conn.execute(
-                    "UPDATE vocs SET status=?, updated_at=datetime('now','localtime') WHERE id=?",
+                    "UPDATE voc_info SET status=?, updated_at=datetime('now','localtime') WHERE vocno=?",
                     (item['new'], item['id'])
                 )
     return result
 
 
-def update_from_sync(voc_id, data, stages=None):
-    _EXCLUDE = {'id', 'created_at', 'updated_at', 'assignee_id', 'images'}
+def update_from_sync(vocno, data, stages=None):
+    _EXCLUDE = {'vocno', 'assignee_id', 'created_at', 'updated_at',
+                'images', 'voc_number', 'id', 'voc_id'}
     with get_conn() as conn:
-        col_rows  = conn.execute('PRAGMA table_info(vocs)').fetchall()
+        col_rows = conn.execute('PRAGMA table_info(voc_info)').fetchall()
         valid_cols = {r['name'] for r in col_rows}
 
     fields, params = [], []
@@ -467,19 +477,19 @@ def update_from_sync(voc_id, data, stages=None):
         params.append(str(val or '').strip())
 
     if fields:
-        params.append(voc_id)
+        params.append(vocno)
         with get_conn() as conn:
             conn.execute(
-                f"UPDATE vocs SET {', '.join(fields)}, updated_at=datetime('now','localtime') WHERE id=?",
+                f"UPDATE voc_info SET {', '.join(fields)}, updated_at=datetime('now','localtime') WHERE vocno=?",
                 params
             )
 
-    save_voc_info(voc_id, data)
+    save_voc_info(vocno, data)
 
     if stages is not None:
-        save_voc_stages(voc_id, stages)
+        save_voc_stages(vocno, stages)
         if stages:
-            _update_status_from_last_stage(voc_id, stages[-1].get('vocstatuscode', ''))
+            _update_status_from_last_stage(vocno, stages[-1].get('vocstatuscode', ''))
 
     if not fields and stages is None:
         return {'success': False, 'error': '업데이트할 데이터가 없습니다.'}
@@ -488,30 +498,29 @@ def update_from_sync(voc_id, data, stages=None):
 
 def get_daily_report():
     from datetime import date
-    status_label = {'open': '접수', 'in_progress': '처리중', 'resolved': '해결', 'closed': '종료'}
-
     with get_conn() as conn:
         rows = conn.execute('''
-            SELECT v.id, v.voc_number, v.title, v.due_date, v.status, a.name as assignee_name
-            FROM vocs v
-            LEFT JOIN assignees a ON v.assignee_id = a.id
-            WHERE v.status NOT IN ('closed')
+            SELECT vi.vocno, vi.title, vi.due_date,
+                   COALESCE(NULLIF(vi.vocstatuscode,''), vi.status) as status,
+                   a.name as assignee_name
+            FROM voc_info vi
+            LEFT JOIN assignees a ON vi.assignee_id = a.id
+            WHERE COALESCE(NULLIF(vi.vocstatuscode,''), vi.status) NOT IN ('closed')
             ORDER BY
-                CASE WHEN v.due_date = '' OR v.due_date IS NULL THEN 1 ELSE 0 END,
-                v.due_date ASC,
-                v.id ASC
+                CASE WHEN vi.due_date = '' OR vi.due_date IS NULL THEN 1 ELSE 0 END,
+                vi.due_date ASC,
+                vi.created_at ASC
         ''').fetchall()
 
     today = date.today().strftime('%Y-%m-%d')
     lines = [f'[VOC 처리 현황] {today}', '']
 
     for r in rows:
-        num = r['voc_number'] or f'#{r["id"]}'
+        num = r['vocno'] or '-'
         due = r['due_date'] or '-'
         assignee = r['assignee_name'] or '미배정'
-        status = status_label.get(r['status'], r['status'])
         lines.append(f'• [{num}] {r["title"]}')
-        lines.append(f'  담당: {assignee}  |  완료요청: {due}  |  상태: {status}')
+        lines.append(f'  담당: {assignee}  |  완료요청: {due}  |  상태: {r["status"]}')
 
     lines.extend(['', f'총 {len(rows)}건'])
     return '\n'.join(lines)
