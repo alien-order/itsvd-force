@@ -245,6 +245,7 @@ def init_db():
             ('voc_info',           'endplandate',      'TEXT DEFAULT ""'),
             ('voc_info',           'endplantime',      'TEXT DEFAULT ""'),
             ('voc_info',           'vocstatuscode',    'TEXT DEFAULT ""'),
+            ('voc_info',           'vocstatusnm',      'TEXT DEFAULT ""'),
             ('voc_info',           'voctypecode',      'TEXT DEFAULT ""'),
             # voc_stage_info 추가 컬럼
             ('voc_stage_info',     'vocstatusname',    'TEXT DEFAULT ""'),

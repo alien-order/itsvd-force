@@ -81,6 +81,12 @@ def save_voc_stages(voc_id, stages):
                 f'INSERT INTO voc_stage_info ({",".join(col_names)}) VALUES ({",".join("?"*len(col_names))})',
                 vals
             )
+    if stages:
+        last = stages[-1]
+        save_voc_info(voc_id, {
+            'vocstatuscode': last.get('vocstatuscode', ''),
+            'vocstatusnm':   last.get('vocstatusname', ''),
+        })
 
 
 def get_voc_stages(voc_id):
@@ -184,12 +190,13 @@ def get_vocs(status=None, search=None, assignee_id=None, category=None, date_fro
             ).fetchall()
         _vals = [r['value'] for r in _rows]
         if _vals:
-            query += f" AND v.status IN ({','.join('?'*len(_vals))})"
+            ph = ','.join('?' * len(_vals))
+            query += f" AND COALESCE(NULLIF(vi.vocstatuscode,''), v.status) IN ({ph})"
             params.extend(_vals)
         else:
-            query += " AND v.status IN ('open','in_progress')"
+            query += " AND COALESCE(NULLIF(vi.vocstatuscode,''), v.status) IN ('open','in_progress')"
     elif status and status != 'all':
-        query += ' AND v.status = ?'
+        query += " AND COALESCE(NULLIF(vi.vocstatuscode,''), v.status) = ?"
         params.append(status)
 
     if search and search.strip():

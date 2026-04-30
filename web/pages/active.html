@@ -208,7 +208,7 @@
                 <tr>
                   <th>VOC담당GBM</th><td>{{ vocInfo.gbmname || '-' }}</td>
                   <th>업무유형</th><td>{{ vocInfo.sysbizcode && vocInfo.sysbizcode1 ? (vocInfo.sysbizcode + ' › ' + vocInfo.sysbizcode1) : (vocInfo.sysbizcode || vocInfo.sysbizcode1 || vocInfo.bizNmDept || selected.category || '-') }}</td>
-                  <th>세부진행상태</th><td>{{ vocStatusMap[vocInfo.vocstatuscode] || vocInfo.vocstatusname || '-' }}</td>
+                  <th>세부진행상태</th><td>{{ vocStatusMap[vocInfo.vocstatuscode] || vocInfo.vocstatusnm || '-' }}</td>
                 </tr>
                 <tr>
                   <th>VOC유형</th><td colspan="5">{{ vocInfo.voctypename || '-' }}</td>
