@@ -100,19 +100,9 @@ def get_voc_stages(voc_id):
 
 
 def create_voc(data, stages=None):
-    title             = data.get('title', '').strip()
-    content           = data.get('content', '').strip()
-    category          = data.get('category', '').strip()
-    process_type      = data.get('process_type', '').strip()
-    priority          = data.get('priority', 'normal')
-    voc_number        = data.get('voc_number', '').strip()
-    requester         = data.get('requester', '').strip()
-    due_date          = data.get('due_date', '').strip()
-    images            = data.get('images', [])
-    forced_assignee_id = data.get('forced_assignee_id')  # None = auto
-
-    if not title or not content:
-        return {'success': False, 'error': '제목과 내용은 필수입니다.'}
+    images             = data.get('images', [])
+    forced_assignee_id = data.get('forced_assignee_id')
+    category           = str(data.get('category', '') or '').strip()
 
     if forced_assignee_id:
         assign_result = {'assignee_id': int(forced_assignee_id), 'type': 'forced', 'skipped': []}
@@ -122,16 +112,26 @@ def create_voc(data, stages=None):
 
     assignee_id = assign_result['assignee_id']
 
+    _SKIP = {'id', 'created_at', 'updated_at', 'assignee_id', 'images', 'forced_assignee_id'}
+
     with get_conn() as conn:
+        valid_cols = {r['name'] for r in conn.execute('PRAGMA table_info(vocs)').fetchall()}
+
+        insert_cols = ['assignee_id']
+        insert_vals = [assignee_id]
+        for key, val in data.items():
+            if key in _SKIP or key not in valid_cols:
+                continue
+            insert_cols.append(key)
+            insert_vals.append(str(val or '').strip())
+
+        placeholders = ','.join('?' * len(insert_cols))
         cur = conn.execute(
-            '''INSERT INTO vocs
-               (title, content, category, priority, assignee_id, voc_number, requester, due_date, process_type)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-            (title, content, category, priority, assignee_id, voc_number, requester, due_date, process_type)
+            f"INSERT INTO vocs ({','.join(insert_cols)}) VALUES ({placeholders})",
+            insert_vals
         )
         voc_id = cur.lastrowid
 
-        # 배정 이력 기록
         if assignee_id:
             conn.execute(
                 'INSERT INTO assignment_history (voc_id, assignee_id, note, assignment_type) VALUES (?,?,?,?)',
@@ -140,7 +140,6 @@ def create_voc(data, stages=None):
                  assign_result['type'])
             )
 
-        # 보류된 담당자 이력 기록
         for skipped in assign_result.get('skipped', []):
             conn.execute(
                 'INSERT INTO assignment_history (voc_id, assignee_id, note, assignment_type) VALUES (?,?,?,?)',
@@ -156,7 +155,8 @@ def create_voc(data, stages=None):
         ''', (voc_id,)).fetchone()
 
     if images:
-        image_search.save_voc_images(voc_id, voc_number or str(voc_id), images)
+        voc_number = str(data.get('voc_number', '') or voc_id)
+        image_search.save_voc_images(voc_id, voc_number, images)
 
     save_voc_info(voc_id, data)
 

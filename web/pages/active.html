@@ -621,9 +621,11 @@ createApp({
     };
 
     const submitVoc = async () => {
-      if (!previewData.value?.title?.trim()) return;
+      if (!previewData.value) return;
       submitting.value=true;
       const payload = {...previewData.value, images: previewData.value.images||[]};
+      // vocNumInput에서 가져온 번호를 우선 적용 (api_field_map으로 매핑되지 않은 경우 대비)
+      if (vocNumInput.value.trim()) payload.voc_number = vocNumInput.value.trim();
       if (forcedAssigneeId.value) payload.forced_assignee_id = parseInt(forcedAssigneeId.value);
       const result = await eel.create_voc(payload, previewStages.value)();
       submitting.value=false;

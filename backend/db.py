@@ -327,6 +327,54 @@ def init_db():
         except Exception:
             pass
 
+        # vocs: title/content NOT NULL → DEFAULT '' 로 변경 (config 기반 동적 INSERT 지원)
+        _vocs_needs_migrate = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='_vocs_default_v1'"
+        ).fetchone()[0] == 0
+        if _vocs_needs_migrate:
+            try:
+                conn.execute('PRAGMA foreign_keys=OFF')
+                conn.execute('''
+                    CREATE TABLE vocs_new (
+                        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                        title        TEXT NOT NULL DEFAULT '',
+                        content      TEXT NOT NULL DEFAULT '',
+                        category     TEXT DEFAULT '',
+                        priority     TEXT DEFAULT 'normal',
+                        status       TEXT DEFAULT 'open',
+                        assignee_id  INTEGER,
+                        created_at   TEXT DEFAULT (datetime('now','localtime')),
+                        updated_at   TEXT DEFAULT (datetime('now','localtime')),
+                        voc_number   TEXT DEFAULT '',
+                        requester    TEXT DEFAULT '',
+                        due_date     TEXT DEFAULT '',
+                        process_type TEXT DEFAULT '',
+                        sysbizcode   TEXT DEFAULT '',
+                        sysbizcode1  TEXT DEFAULT ''
+                    )
+                ''')
+                conn.execute('''
+                    INSERT INTO vocs_new
+                    SELECT id,
+                           COALESCE(title,''), COALESCE(content,''), COALESCE(category,''),
+                           COALESCE(priority,'normal'), COALESCE(status,'open'), assignee_id,
+                           created_at, updated_at,
+                           COALESCE(voc_number,''), COALESCE(requester,''),
+                           COALESCE(due_date,''), COALESCE(process_type,''),
+                           COALESCE(sysbizcode,''), COALESCE(sysbizcode1,'')
+                    FROM vocs
+                ''')
+                conn.execute('DROP TABLE vocs')
+                conn.execute('ALTER TABLE vocs_new RENAME TO vocs')
+                conn.execute('CREATE TABLE _vocs_default_v1 (done INTEGER DEFAULT 1)')
+                conn.execute('PRAGMA foreign_keys=ON')
+            except Exception:
+                try:
+                    conn.execute('DROP TABLE IF EXISTS vocs_new')
+                    conn.execute('PRAGMA foreign_keys=ON')
+                except Exception:
+                    pass
+
         # custom_menus table
         conn.execute('''
             CREATE TABLE IF NOT EXISTS custom_menus (

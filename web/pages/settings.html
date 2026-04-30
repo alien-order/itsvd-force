@@ -446,7 +446,13 @@
           <input v-model="apiConfig.api_list_path" type="text" placeholder="예: vocInfoList" class="inp text-sm">
           <p class="text-xs text-slate-400 mt-1">API 응답에서 단계 배열의 경로입니다. 각 항목은 <span class="font-mono bg-slate-100 px-1 rounded">uppervocno</span>로 부모와 연결됩니다.</p>
         </div>
-        <p class="text-xs text-slate-400 -mt-2">단계 상태는 <span class="font-mono bg-slate-100 px-1 rounded">vocstatuscode</span>를 VOC 상태 설정의 코드값으로 자동 매핑합니다.</p>
+        <p class="text-xs text-slate-400 -mt-2">
+          <span class="font-mono bg-slate-100 px-1 rounded">vocstatuscode</span>,
+          <span class="font-mono bg-slate-100 px-1 rounded">vocstatusname</span>,
+          <span class="font-mono bg-slate-100 px-1 rounded">voctypename</span>,
+          <span class="font-mono bg-slate-100 px-1 rounded">voctypecode</span>,
+          <span class="font-mono bg-slate-100 px-1 rounded">uppervocno</span>는 자동 추출됩니다. 나머지 필드만 여기에 매핑하세요.
+        </p>
         <div>
           <div class="flex items-center justify-between mb-2">
             <div>
@@ -457,7 +463,7 @@
           </div>
           <div class="space-y-2">
             <div v-for="(m,i) in apiConfig.api_child_field_map" :key="i" class="flex gap-2 items-center">
-              <input v-model="m.col" type="text" placeholder="컬럼명 (예: stage_status)" class="inp text-xs py-1.5 flex-1">
+              <input v-model="m.col" type="text" placeholder="컬럼명 (예: voctext, registername)" class="inp text-xs py-1.5 flex-1">
               <span class="text-xs text-slate-300 shrink-0">← JSON 경로</span>
               <input v-model="m.path" type="text" placeholder="예: stageType" class="inp text-xs py-1.5 flex-1">
               <button @click="apiConfig.api_child_field_map.splice(i,1)" class="btn btn-danger text-xs px-2">✕</button>
@@ -975,7 +981,7 @@ createApp({
     // ── API 설정 ─────────────────────────────────────────────────
     const apiConfig    = ref({
       api_url_pattern:'', api_token:'',
-      api_list_path:'', api_stage_status_col:'stage_status',
+      api_list_path:'',
       api_field_map:[], api_child_field_map:[],
     });
     const vocColumns   = ref([]);
@@ -987,9 +993,8 @@ createApp({
       apiConfig.value = {
         api_url_pattern:      cfg.api_url_pattern      || '',
         api_token:            cfg.api_token             || '',
-        api_list_path:        cfg.api_list_path         || '',
-        api_stage_status_col: cfg.api_stage_status_col  || 'stage_status',
-        api_field_map:        cfg.api_field_map         || [],
+        api_list_path:        cfg.api_list_path  || '',
+        api_field_map:        cfg.api_field_map  || [],
         api_child_field_map:  cfg.api_child_field_map   || [],
       };
       vocColumns.value = cols;
