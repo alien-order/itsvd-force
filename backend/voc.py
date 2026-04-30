@@ -31,10 +31,18 @@ def save_voc_info(vocno, data):
     _META = {'vocno', 'assignee_id', 'created_at', 'updated_at', 'images',
              'forced_assignee_id', 'voc_number'}
     with get_conn() as conn:
-        cols = {r['name'] for r in conn.execute('PRAGMA table_info(voc_info)').fetchall()}
+        existing_cols = {r['name'] for r in conn.execute('PRAGMA table_info(voc_info)').fetchall()}
+        # Auto-add columns that api_field_map may reference but don't exist yet
+        for key in data:
+            if key not in _META and key not in existing_cols:
+                try:
+                    conn.execute(f"ALTER TABLE voc_info ADD COLUMN {key} TEXT DEFAULT ''")
+                    existing_cols.add(key)
+                except Exception:
+                    pass
         row = {'vocno': vocno}
         for key, val in data.items():
-            if key not in _META and key in cols:
+            if key not in _META and key in existing_cols:
                 row[key] = str(val or '').strip()
         if len(row) <= 1:
             return

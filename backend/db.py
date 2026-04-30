@@ -20,19 +20,6 @@ def init_db():
                 created_at TEXT DEFAULT (datetime('now', 'localtime'))
             );
 
-            CREATE TABLE IF NOT EXISTS vocs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                content TEXT NOT NULL,
-                category TEXT DEFAULT '',
-                priority TEXT DEFAULT 'normal',
-                status TEXT DEFAULT 'open',
-                assignee_id INTEGER,
-                created_at TEXT DEFAULT (datetime('now', 'localtime')),
-                updated_at TEXT DEFAULT (datetime('now', 'localtime')),
-                FOREIGN KEY (assignee_id) REFERENCES assignees(id)
-            );
-
             CREATE TABLE IF NOT EXISTS assignment_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 voc_id INTEGER NOT NULL,
@@ -203,26 +190,14 @@ def init_db():
                 FOREIGN KEY (voc_id) REFERENCES vocs(id)
             )
         ''')
-        # voc_stages: 이전 호환용 (사용 중단, voc_stage_info로 대체)
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS voc_stages (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                voc_id       INTEGER NOT NULL,
-                stage_index  INTEGER DEFAULT 0,
-                uppervocno   TEXT DEFAULT '',
-                stage_status TEXT DEFAULT '',
-                stage_data   TEXT DEFAULT '{}',
-                FOREIGN KEY (voc_id) REFERENCES vocs(id)
-            )
-        ''')
         # migration: add new columns to existing tables
         migrations = [
-            ('vocs',               'voc_number',       'TEXT DEFAULT ""'),
-            ('vocs',               'requester',        'TEXT DEFAULT ""'),
-            ('vocs',               'due_date',         'TEXT DEFAULT ""'),
             ('assignees',          'turn_order',       'INTEGER DEFAULT 0'),
             ('assignees',          'hold_turns',       'INTEGER DEFAULT 0'),
             ('assignees',          'priority_next',    'INTEGER DEFAULT 0'),
+            ('assignees',          'knox_id',          'TEXT DEFAULT NULL'),
+            ('assignees',          'ip_address',       'TEXT DEFAULT ""'),
+            ('assignees',          'avatar',           'TEXT DEFAULT ""'),
             ('assignment_history', 'assignment_type',  'TEXT DEFAULT "auto"'),
             ('voc_notes',          'note_date',        'TEXT DEFAULT ""'),
             ('voc_notes',          'work_minutes',     'INTEGER DEFAULT 0'),
@@ -231,29 +206,8 @@ def init_db():
             ('knowledge',          'voc_type',         'TEXT DEFAULT ""'),
             ('knowledge',          'sub_category',     'TEXT DEFAULT ""'),
             ('type_items',         'parent_id',        'INTEGER DEFAULT NULL'),
-            ('assignees',          'knox_id',          'TEXT DEFAULT NULL'),
-            ('assignees',          'ip_address',       'TEXT DEFAULT ""'),
-            ('assignees',          'avatar',           'TEXT DEFAULT ""'),
-            ('vocs',               'process_type',     'TEXT DEFAULT ""'),
             ('type_items',         'show_as_tab',      'INTEGER DEFAULT 0'),
             ('type_items',         'is_active',        'INTEGER DEFAULT 0'),
-            # voc_info 추가 컬럼
-            ('voc_info',           'sysbizcode',       'TEXT DEFAULT ""'),
-            ('voc_info',           'sysbizcode1',      'TEXT DEFAULT ""'),
-            ('voc_info',           'register_singleid','TEXT DEFAULT ""'),
-            ('voc_info',           'writer_singleid',  'TEXT DEFAULT ""'),
-            ('voc_info',           'endplandate',      'TEXT DEFAULT ""'),
-            ('voc_info',           'endplantime',      'TEXT DEFAULT ""'),
-            ('voc_info',           'vocstatuscode',    'TEXT DEFAULT ""'),
-            ('voc_info',           'vocstatusnm',      'TEXT DEFAULT ""'),
-            ('voc_info',           'voctypecode',      'TEXT DEFAULT ""'),
-            # voc_stage_info 추가 컬럼
-            ('voc_stage_info',     'vocstatusname',    'TEXT DEFAULT ""'),
-            ('voc_stage_info',     'voctypename',      'TEXT DEFAULT ""'),
-            ('voc_stage_info',     'voctypecode',      'TEXT DEFAULT ""'),
-            # vocs 추가 컬럼 (리스트 카드 표시용)
-            ('vocs',               'sysbizcode',       'TEXT DEFAULT ""'),
-            ('vocs',               'sysbizcode1',      'TEXT DEFAULT ""'),
         ]
         for table, col, definition in migrations:
             try:
@@ -322,60 +276,6 @@ def init_db():
         except Exception:
             pass
 
-        # voc_stage_info: stage_status → vocstatuscode (API 원본 키 그대로 사용)
-        try:
-            conn.execute('ALTER TABLE voc_stage_info RENAME COLUMN stage_status TO vocstatuscode')
-        except Exception:
-            pass
-
-        # vocs: title/content NOT NULL → DEFAULT '' 로 변경 (config 기반 동적 INSERT 지원)
-        _vocs_needs_migrate = conn.execute(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='_vocs_default_v1'"
-        ).fetchone()[0] == 0
-        if _vocs_needs_migrate:
-            try:
-                conn.execute('PRAGMA foreign_keys=OFF')
-                conn.execute('''
-                    CREATE TABLE vocs_new (
-                        id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                        title        TEXT NOT NULL DEFAULT '',
-                        content      TEXT NOT NULL DEFAULT '',
-                        category     TEXT DEFAULT '',
-                        priority     TEXT DEFAULT 'normal',
-                        status       TEXT DEFAULT 'open',
-                        assignee_id  INTEGER,
-                        created_at   TEXT DEFAULT (datetime('now','localtime')),
-                        updated_at   TEXT DEFAULT (datetime('now','localtime')),
-                        voc_number   TEXT DEFAULT '',
-                        requester    TEXT DEFAULT '',
-                        due_date     TEXT DEFAULT '',
-                        process_type TEXT DEFAULT '',
-                        sysbizcode   TEXT DEFAULT '',
-                        sysbizcode1  TEXT DEFAULT ''
-                    )
-                ''')
-                conn.execute('''
-                    INSERT INTO vocs_new
-                    SELECT id,
-                           COALESCE(title,''), COALESCE(content,''), COALESCE(category,''),
-                           COALESCE(priority,'normal'), COALESCE(status,'open'), assignee_id,
-                           created_at, updated_at,
-                           COALESCE(voc_number,''), COALESCE(requester,''),
-                           COALESCE(due_date,''), COALESCE(process_type,''),
-                           COALESCE(sysbizcode,''), COALESCE(sysbizcode1,'')
-                    FROM vocs
-                ''')
-                conn.execute('DROP TABLE vocs')
-                conn.execute('ALTER TABLE vocs_new RENAME TO vocs')
-                conn.execute('CREATE TABLE _vocs_default_v1 (done INTEGER DEFAULT 1)')
-                conn.execute('PRAGMA foreign_keys=ON')
-            except Exception:
-                try:
-                    conn.execute('DROP TABLE IF EXISTS vocs_new')
-                    conn.execute('PRAGMA foreign_keys=ON')
-                except Exception:
-                    pass
-
         # Migration: voc_info becomes the main table keyed by vocno (TEXT PK)
         _vocno_main_exists = conn.execute(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='_vocno_main_v1'"
@@ -383,49 +283,63 @@ def init_db():
         if not _vocno_main_exists:
             try:
                 conn.execute('PRAGMA foreign_keys=OFF')
-                conn.execute('''
-                    CREATE TABLE voc_info_main (
-                        vocno             TEXT PRIMARY KEY,
-                        assignee_id       INTEGER,
-                        priority          TEXT DEFAULT 'normal',
-                        status            TEXT DEFAULT '',
-                        created_at        TEXT DEFAULT (datetime('now','localtime')),
-                        updated_at        TEXT DEFAULT (datetime('now','localtime')),
-                        title             TEXT DEFAULT '',
-                        content           TEXT DEFAULT '',
-                        category          TEXT DEFAULT '',
-                        requester         TEXT DEFAULT '',
-                        due_date          TEXT DEFAULT '',
-                        process_type      TEXT DEFAULT '',
-                        vocstatuscode     TEXT DEFAULT '',
-                        vocstatusnm       TEXT DEFAULT '',
-                        voctypecode       TEXT DEFAULT '',
-                        sysbizcode        TEXT DEFAULT '',
-                        sysbizcode1       TEXT DEFAULT '',
-                        register_singleid TEXT DEFAULT '',
-                        writer_singleid   TEXT DEFAULT '',
-                        endplandate       TEXT DEFAULT '',
-                        endplantime       TEXT DEFAULT '',
-                        bizNmDept         TEXT DEFAULT ''
-                    )
-                ''')
+
+                # Read existing column sets so we preserve ALL original API columns
+                old_vi = {r['name']: r for r in conn.execute('PRAGMA table_info(voc_info)').fetchall()}
+                old_vocs = {r['name'] for r in conn.execute('PRAGMA table_info(vocs)').fetchall()}
+
+                # Management columns to bring in from vocs (with type/default)
+                mgmt_cols = [
+                    ('assignee_id',   'INTEGER'),
+                    ('priority',      "TEXT DEFAULT 'normal'"),
+                    ('status',        "TEXT DEFAULT ''"),
+                    ('created_at',    "TEXT DEFAULT (datetime('now','localtime'))"),
+                    ('updated_at',    "TEXT DEFAULT (datetime('now','localtime'))"),
+                    ('title',         "TEXT DEFAULT ''"),
+                    ('content',       "TEXT DEFAULT ''"),
+                    ('category',      "TEXT DEFAULT ''"),
+                    ('requester',     "TEXT DEFAULT ''"),
+                    ('due_date',      "TEXT DEFAULT ''"),
+                    ('process_type',  "TEXT DEFAULT ''"),
+                    ('bizNmDept',     "TEXT DEFAULT ''"),
+                ]
+                mgmt_names = {c for c, _ in mgmt_cols}
+
+                # Build CREATE TABLE: PK vocno + mgmt cols (if not in old vi) + all old API cols
+                col_defs = ['vocno TEXT PRIMARY KEY']
+                for col, defn in mgmt_cols:
+                    if col not in old_vi:
+                        col_defs.append(f'{col} {defn}')
+                for col in old_vi:
+                    if col not in ('id', 'voc_id', 'vocno') and col not in mgmt_names:
+                        col_defs.append(f"{col} TEXT DEFAULT ''")
+
+                conn.execute(f"CREATE TABLE voc_info_new ({', '.join(col_defs)})")
+
+                # Build INSERT SELECT: join vocs (mgmt) + voc_info (API data)
+                new_col_list = [r['name'] for r in conn.execute('PRAGMA table_info(voc_info_new)').fetchall()]
+                vi_col_set = set(old_vi.keys())
+                selects = []
+                for col in new_col_list:
+                    if col == 'vocno':
+                        selects.append("COALESCE(NULLIF(vi.vocno,''), CAST(v.id AS TEXT)) as vocno")
+                    elif col in vi_col_set:
+                        selects.append(f'vi.{col}')
+                    elif col in old_vocs:
+                        selects.append(f'v.{col}')
+                    else:
+                        selects.append(f"'' as {col}")
                 try:
-                    conn.execute('''
-                        INSERT OR IGNORE INTO voc_info_main
-                            (vocno, assignee_id, created_at, updated_at, title, content,
-                             category, requester, due_date, process_type, status)
-                        SELECT COALESCE(NULLIF(v.voc_number,''), CAST(v.id AS TEXT)),
-                               v.assignee_id, v.created_at, v.updated_at,
-                               COALESCE(v.title,''), COALESCE(v.content,''),
-                               COALESCE(v.category,''), COALESCE(v.requester,''),
-                               COALESCE(v.due_date,''), COALESCE(v.process_type,''),
-                               COALESCE(v.status,'')
-                        FROM vocs v
-                    ''')
+                    conn.execute(
+                        f"INSERT OR IGNORE INTO voc_info_new ({','.join(new_col_list)}) "
+                        f"SELECT {','.join(selects)} "
+                        f"FROM vocs v LEFT JOIN voc_info vi ON vi.voc_id = v.id"
+                    )
                 except Exception:
                     pass
+
                 conn.execute('DROP TABLE IF EXISTS voc_info')
-                conn.execute('ALTER TABLE voc_info_main RENAME TO voc_info')
+                conn.execute('ALTER TABLE voc_info_new RENAME TO voc_info')
                 conn.execute('DROP TABLE IF EXISTS voc_stage_info')
                 conn.execute('''
                     CREATE TABLE voc_stage_info (
@@ -488,10 +402,19 @@ def init_db():
                 conn.execute('PRAGMA foreign_keys=ON')
             except Exception:
                 try:
-                    conn.execute('DROP TABLE IF EXISTS voc_info_main')
+                    conn.execute('DROP TABLE IF EXISTS voc_info_new')
                     conn.execute('PRAGMA foreign_keys=ON')
                 except Exception:
                     pass
+
+        # Drop legacy tables that are no longer used
+        if not conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='_cleanup_unused_v1'"
+        ).fetchone()[0]:
+            conn.execute('DROP TABLE IF EXISTS vocs')
+            conn.execute('DROP TABLE IF EXISTS voc_stages')
+            conn.execute('DROP TABLE IF EXISTS _vocs_default_v1')
+            conn.execute('CREATE TABLE _cleanup_unused_v1 (done INTEGER DEFAULT 1)')
 
         # custom_menus table
         conn.execute('''

@@ -38,7 +38,7 @@ def delete_assignee(assignee_id):
             active_vals = ['open', 'in_progress']
         placeholders = ','.join('?' * len(active_vals))
         active = conn.execute(
-            f'SELECT COUNT(*) FROM vocs WHERE assignee_id=? AND status IN ({placeholders})',
+            f'SELECT COUNT(*) FROM voc_info WHERE assignee_id=? AND status IN ({placeholders})',
             [assignee_id] + active_vals
         ).fetchone()[0]
         if active > 0:
@@ -430,7 +430,7 @@ def get_next_up():
             SELECT a.*,
                    COUNT(CASE WHEN v.status IN ({in_clause}) THEN 1 END) as active_count
             FROM assignees a
-            LEFT JOIN vocs v ON v.assignee_id = a.id
+            LEFT JOIN voc_info v ON v.assignee_id = a.id
             WHERE a.active = 1
             GROUP BY a.id
             ORDER BY a.turn_order ASC, a.id ASC
